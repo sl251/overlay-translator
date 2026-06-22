@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- ML Kit 模型自动下载 -->
+    <queries>
+        <package android:name="com.google.android.gms" />
+        <package android:name="moe.shizuku.privileged.api" />
+        <package android:name="moe.shizuku.api" />
+    </queries>
+
+    <application
+        android:name=".GameOcrApp"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.GameOcr"
+        tools:targetApi="35">
+
+        <!-- 主界面 -->
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.GameOcr">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- 透明 Activity：用于接 MediaProjection 系统授权回调 -->
+        <activity
+            android:name=".capture.MediaProjectionRequestActivity"
+            android:exported="false"
+            android:theme="@style/Theme.GameOcr.Transparent"
+            android:excludeFromRecents="true"
+            android:noHistory="true" />
+
+        <!-- 区域选择 Activity：全屏拉框 -->
+        <activity
+            android:name=".capture.RegionPickerActivity"
+            android:exported="false"
+            android:theme="@style/Theme.GameOcr.Transparent"
+            android:excludeFromRecents="true"
+            android:noHistory="true" />
+
+        <!-- 截屏前台服务：mediaProjection 用于默认截屏；specialUse 用于 Shizuku 路径 -->
+        <service
+            android:name=".service.CaptureService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection|specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Shizuku-based on-demand screen capture for OCR translation" />
+        </service>
+
+        <!-- Shizuku provider：用于让 Shizuku 服务把 IBinder 绑过来 -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"
+            tools:ignore="ExportedContentProvider" />
+
+        <!-- 可选无障碍服务：音量键触发器（仅用户在设置里启用后生效） -->
+        <service
+            android:name=".trigger.GameOcrAccessibilityService"
+            android:exported="false"
+            android:label="@string/a11y_summary"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/a11y_config" />
+        </service>
+
+        <!-- ML Kit 端侧模型自动下载 -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="ocr,ocr_japanese,ocr_chinese" />
+
+    </application>
+
+</manifest>

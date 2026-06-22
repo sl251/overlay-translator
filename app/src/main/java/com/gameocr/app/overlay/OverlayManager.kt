@@ -1,0 +1,280 @@
+package com.gameocr.app.overlay
+
+import android.content.Context
+import android.graphics.PixelFormat
+import android.graphics.Rect
+import android.graphics.drawable.GradientDrawable
+import android.os.Build
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.View
+import android.view.WindowManager
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.TextView
+import com.gameocr.app.R
+import com.gameocr.app.data.OverlayPlacement
+import com.gameocr.app.data.OverlayTheme
+import com.gameocr.app.ocr.TextBlock
+
+/**
+ * 译文叠加渲染。
+ * - [showFullScreen]：整屏底部一条横幅，列出所有原文 → 译文。
+ * - [showBlocks]：按每段文本的 boundingBox 紧贴原文下方贴一行译文。
+ * - [showLoadingHint]：点击瞬间立刻显示，给用户反馈，避免几秒空窗。
+ */
+class OverlayManager(
+    private val context: Context,
+    @Volatile var textSizeSp: Int = 14,
+    @Volatile var alpha: Float = 0.85f,
+    @Volatile var regionOffset: android.graphics.Point = android.graphics.Point(0, 0),
+    @Volatile var placement: OverlayPlacement = OverlayPlacement.BELOW,
+    @Volatile var offsetX: Int = 0,
+    @Volatile var offsetY: Int = 0,
+    @Volatile var theme: OverlayTheme = OverlayTheme.CLASSIC_DARK,
+    @Volatile var customBg: Int = 0xE6000000.toInt(),
+    @Volatile var customFg: Int = 0xFFFFFFFF.toInt(),
+    @Volatile var customBorder: Int = 0,
+    @Volatile var customBorderWidthDp: Int = 0
+) {
+
+    private val wm by lazy { context.getSystemService(Context.WINDOW_SERVICE) as WindowManager }
+    private var bannerView: View? = null
+    private var blocksView: View? = null
+    private var loadingView: View? = null
+    private val blockViews = mutableMapOf<Int, TextView>()
+
+    private val overlayType: Int = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+    } else {
+        @Suppress("DEPRECATION")
+        WindowManager.LayoutParams.TYPE_PHONE
+    }
+
+    /**
+     * 即时反馈：显示一个旋转 ProgressBar（图标，OCR 抓不到 → 避免 loading 文字被翻译）。
+     * 透明圆底，浮在屏幕顶部中央。后续译文出来后会被替换。
+     */
+    fun showLoadingHint() {
+        clearLoading()
+        val density = context.resources.displayMetrics.density
+        val size = (40 * density).toInt()
+        val pad = (8 * density).toInt()
+        val container = FrameLayout(context).apply {
+            background = GradientDrawable().apply {
+                cornerRadius = 999f
+                setColor(0xC0000000.toInt())
+            }
+            setPadding(pad, pad, pad, pad)
+        }
+        val pb = android.widget.ProgressBar(context).apply {
+            // indeterminate 默认转圈
+            isIndeterminate = true
+            indeterminateTintList = android.content.res.ColorStateList.valueOf(0xFFFFFFFF.toInt())
+        }
+        val pbLp = FrameLayout.LayoutParams(size, size)
+        container.addView(pb, pbLp)
+
+        val params = newLayoutParams().apply {
+            width = WindowManager.LayoutParams.WRAP_CONTENT
+            height = WindowManager.LayoutParams.WRAP_CONTENT
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            y = (24 * density).toInt()
+        }
+        runCatching { wm.addView(container, params) }
+        loadingView = container
+    }
+
+    private fun clearLoading() {
+        loadingView?.let { runCatching { wm.removeView(it) } }
+        loadingView = null
+    }
+
+    fun showFullScreen(pairs: List<Pair<String, String>>) {
+        clearLoading()
+        clear()
+        if (pairs.isEmpty()) return
+
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            background = themeBg()
+            this.alpha = this@OverlayManager.alpha
+            setPadding(24, 16, 24, 16)
+        }
+        pairs.forEach { (src, dst) ->
+            container.addView(TextView(context).apply {
+                text = "・$src"
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, (textSizeSp - 1).toFloat())
+                setTextColor(themeFgMutedColor())
+            })
+            container.addView(TextView(context).apply {
+                text = dst
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp.toFloat())
+                setTextColor(themeFgColor())
+            })
+        }
+        container.setOnClickListener { clear() }
+
+        val params = newLayoutParams().apply {
+            width = WindowManager.LayoutParams.MATCH_PARENT
+            height = WindowManager.LayoutParams.WRAP_CONTENT
+            gravity = Gravity.BOTTOM or Gravity.START
+            y = 96
+        }
+        runCatching { wm.addView(container, params) }
+        bannerView = container
+    }
+
+    fun showBlocks(blocks: List<Pair<TextBlock, String>>) {
+        clearLoading()
+        clear()
+        if (blocks.isEmpty()) return
+
+        val root = FrameLayout(context).apply { this.alpha = this@OverlayManager.alpha }
+        val screenW = context.resources.displayMetrics.widthPixels
+
+        // 所有 bounding box 一份用于碰撞检测（不影响 blocks 原始顺序，流式 updateBlockText 仍按 idx 找）
+        val allBoxes = blocks.map { it.first.boundingBox }
+
+        blocks.forEachIndexed { idx, (block, dst) ->
+            val b: Rect = block.boundingBox
+            val baseLeft = (b.left + regionOffset.x + offsetX).coerceAtLeast(0)
+            val origW = (b.right - b.left).coerceAtLeast(0)
+            val origH = (b.bottom - b.top).coerceAtLeast(0)
+
+            // 找右侧相邻块（同行附近 + left 比本块右）作为 maxWidth 的上限
+            // 这样译文能单行就单行，会撞到隔壁就自动换行（不会越界遮挡）
+            val verticalTolerance = (origH * 1.5).toInt().coerceAtLeast(30)
+            val rightNeighborLeft = allBoxes.asSequence()
+                .filter { it !== b }
+                .filter { kotlin.math.abs(it.top - b.top) <= verticalTolerance }
+                .filter { it.left > b.right - 10 }
+                .minOfOrNull { it.left }
+                ?: screenW
+            val collisionMaxW = (rightNeighborLeft + regionOffset.x + offsetX - baseLeft - 8)
+                .coerceAtLeast(origW.coerceAtLeast(120))
+
+            val tv = TextView(context).apply {
+                text = dst
+                background = themeBg()
+                setTextColor(themeFgColor())
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp.toFloat())
+                // 允许换行：能单行就单行，撞到隔壁就自动换行
+                setSingleLine(false)
+                maxLines = 6
+                setLineSpacing(2f, 1.05f)
+                isHorizontalFadingEdgeEnabled = false
+                ellipsize = null
+                // 智能 maxWidth：受 (相邻块左边界, 屏幕右边) 双重约束
+                maxWidth = minOf(collisionMaxW, screenW - baseLeft - 8)
+                    .coerceAtLeast(120)
+                if (placement == OverlayPlacement.OVERLAP) {
+                    minWidth = origW
+                    minHeight = origH
+                    setPadding(8, 4, 8, 4)
+                }
+            }
+
+            val lp = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                val baseTop = when (placement) {
+                    OverlayPlacement.BELOW -> b.bottom + regionOffset.y + 2 + offsetY
+                    OverlayPlacement.OVERLAP -> b.top + regionOffset.y + offsetY
+                    OverlayPlacement.ABOVE -> b.top + regionOffset.y - (textSizeSp * 3).toInt() - 4 + offsetY
+                }
+                leftMargin = baseLeft
+                topMargin = baseTop.coerceAtLeast(0)
+            }
+            root.addView(tv, lp)
+            blockViews[idx] = tv
+        }
+        root.setOnClickListener { clear() }
+
+        val params = newLayoutParams().apply {
+            width = WindowManager.LayoutParams.MATCH_PARENT
+            height = WindowManager.LayoutParams.MATCH_PARENT
+        }
+        runCatching { wm.addView(root, params) }
+        blocksView = root
+    }
+
+    fun updateBlockText(index: Int, text: String) {
+        blockViews[index]?.text = text
+    }
+
+    fun clear() {
+        clearLoading()
+        bannerView?.let { runCatching { wm.removeView(it) } }
+        blocksView?.let { runCatching { wm.removeView(it) } }
+        bannerView = null
+        blocksView = null
+        blockViews.clear()
+    }
+
+    /**
+     * 构造 overlay 通用 LayoutParams。关键：
+     * - LAYOUT_NO_LIMITS + LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS 让坐标系跟物理屏幕 (0,0) 对齐，
+     *   避免横屏 cutout / status bar inset 把整体推右导致译文偏右。
+     * - NOT_FOCUSABLE / NOT_TOUCH_MODAL 让 overlay 不抢焦点。
+     */
+    private fun newLayoutParams(): WindowManager.LayoutParams =
+        WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            overlayType,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            // 把 cutout / system bar 也算进 layout 区域，确保 overlay (0,0) = 物理屏幕 (0,0)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            }
+            // 设置 fitInsetsTypes = 0，告诉系统这个 window 不要让出任何 system inset
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                fitInsetsTypes = 0
+                fitInsetsSides = 0
+            }
+        }
+
+    private fun themeFgColor(): Int = when (theme) {
+        OverlayTheme.CLASSIC_DARK -> 0xFFFFFFFF.toInt()
+        OverlayTheme.AMBER_GOLD -> 0xFFFFD27F.toInt()
+        OverlayTheme.PAPER_LIGHT -> 0xFF3E2A1F.toInt()
+        OverlayTheme.FROST_GLASS -> 0xFFE0F2FE.toInt()
+        OverlayTheme.CUSTOM -> customFg
+    }
+
+    private fun themeFgMutedColor(): Int = when (theme) {
+        OverlayTheme.CLASSIC_DARK -> 0xFFB0BEC5.toInt()
+        OverlayTheme.AMBER_GOLD -> 0xFFB68850.toInt()
+        OverlayTheme.PAPER_LIGHT -> 0xFF8B6F47.toInt()
+        OverlayTheme.FROST_GLASS -> 0xFF94A3B8.toInt()
+        OverlayTheme.CUSTOM -> (customFg and 0xFFFFFF) or 0x99000000.toInt()
+    }
+
+    private fun themeBg(): GradientDrawable = GradientDrawable().apply {
+        cornerRadius = 8f
+        setColor(when (theme) {
+            OverlayTheme.CLASSIC_DARK -> 0xE6000000.toInt()
+            OverlayTheme.AMBER_GOLD -> 0xF0241608.toInt()
+            OverlayTheme.PAPER_LIGHT -> 0xF0F5EFE0.toInt()
+            OverlayTheme.FROST_GLASS -> 0xCC1E293B.toInt()
+            OverlayTheme.CUSTOM -> customBg
+        })
+        when (theme) {
+            OverlayTheme.AMBER_GOLD -> setStroke(2, 0xFFB8860B.toInt())
+            OverlayTheme.PAPER_LIGHT -> setStroke(1, 0xFFB68850.toInt())
+            OverlayTheme.FROST_GLASS -> setStroke(1, 0xFF60A5FA.toInt())
+            OverlayTheme.CUSTOM -> if (customBorderWidthDp > 0) {
+                val px = (customBorderWidthDp * context.resources.displayMetrics.density).toInt()
+                setStroke(px, customBorder)
+            }
+            else -> { /* CLASSIC_DARK: 无边 */ }
+        }
+    }
+}

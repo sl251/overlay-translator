@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">屏译</string>
+
+    <!-- 主屏 -->
+    <string name="title_main">屏幕实时翻译</string>
+    <string name="status_ready">已就绪</string>
+    <string name="status_running">运行中</string>
+    <string name="status_no_overlay_perm">未授予悬浮窗权限</string>
+    <string name="status_awaiting_projection">等待截屏授权…</string>
+
+    <string name="btn_start">启动截屏服务</string>
+    <string name="btn_stop">停止</string>
+    <string name="btn_request_overlay">请求悬浮窗权限</string>
+    <string name="btn_settings">翻译设置</string>
+    <string name="btn_pick_region">选择截屏区域</string>
+    <string name="btn_clear_region">清除区域（用整屏）</string>
+    <string name="btn_rom_guide">系统兼容引导（自启动/电池白名单）</string>
+    <string name="rom_guide_title">%1$s 兼容设置</string>
+    <string name="rom_guide_msg">为避免后台被杀，建议：1) 允许应用自启动；2) 加入电池白名单；3) 允许后台弹出界面。点确定将跳到对应设置页。</string>
+    <string name="rom_guide_ok">跳转设置</string>
+    <string name="rom_battery_ok">已加入电池白名单 ✓</string>
+    <string name="rom_battery_pending">未在电池白名单</string>
+    <string name="region_info_full">当前：整屏</string>
+    <string name="region_info_set">当前区域：%1$d × %2$d @ (%3$d, %4$d)</string>
+
+    <!-- 设置 -->
+    <string name="settings_title">翻译设置</string>
+    <string name="settings_base_url">Base URL</string>
+    <string name="settings_api_key">API Key</string>
+    <string name="settings_model">模型名</string>
+    <string name="settings_source_lang">源语言</string>
+    <string name="settings_target_lang">目标语言</string>
+    <string name="settings_prompt">Prompt 模板</string>
+    <string name="settings_save">保存</string>
+    <string name="settings_text_size">译文字号 (sp)</string>
+    <string name="settings_alpha">译文透明度</string>
+    <string name="settings_loop_interval">循环间隔 (ms)</string>
+    <string name="settings_streaming">流式翻译（边译边显示）</string>
+    <string name="settings_render_mode">显示模式</string>
+    <string name="settings_render_blocks">紧贴原文（推荐）</string>
+    <string name="settings_render_banner">屏幕底部横幅</string>
+    <string name="settings_placement">译文位置</string>
+    <string name="settings_placement_below">紧贴原文下方</string>
+    <string name="settings_placement_overlap">覆盖原文</string>
+    <string name="settings_placement_above">紧贴原文上方</string>
+    <string name="settings_ocr_engine">OCR 引擎</string>
+    <string name="settings_ocr_auto">自动（按假名）</string>
+    <string name="settings_ocr_latin">拉丁（英文等）</string>
+    <string name="settings_ocr_japanese">日文</string>
+    <string name="settings_ocr_chinese">中文</string>
+    <string name="settings_ocr_baidu">百度云端</string>
+    <string name="settings_ocr_tencent">腾讯云</string>
+    <string name="settings_ocr_paddle">PaddleOCR (端侧)</string>
+    <string name="settings_tencent_id">腾讯云 SecretId</string>
+    <string name="settings_tencent_key">腾讯云 SecretKey</string>
+    <string name="settings_paddle_mirror">PaddleOCR 模型镜像 URL (留空走默认源)</string>
+    <string name="settings_paddle_status_ready">PaddleOCR 模型已就绪 ✓</string>
+    <string name="settings_paddle_status_missing">PaddleOCR 模型未下载</string>
+    <string name="btn_paddle_download">下载 PaddleOCR 模型</string>
+    <string name="btn_paddle_delete">删除已下载模型</string>
+    <string name="btn_paddle_import">从手机文件导入</string>
+    <string name="settings_paddle_help">推荐：浏览器搜 "RapidOCR ONNX models" / "PP-OCRv4 onnx"，下载 det.onnx / rec.onnx / keys.txt 三个文件到手机 Downloads，然后点下面的"从手机文件导入"按钮一次选三个文件。</string>
+    <string name="settings_baidu_key">百度 OCR API Key</string>
+    <string name="settings_baidu_secret">百度 OCR Secret Key</string>
+    <string name="settings_preprocess">图像预处理（OCR 前）</string>
+    <string name="settings_pre_upscale">2× 上采样（提升小字识别率）</string>
+    <string name="settings_pre_invert">颜色反转（暗底白字时打开）</string>
+    <string name="settings_pre_binarize">Otsu 二值化（复杂背景）</string>
+    <string name="settings_a11y_volume">音量键触发（需启用无障碍服务）</string>
+    <string name="btn_a11y_settings">打开无障碍设置</string>
+    <string name="btn_start_shizuku">用 Shizuku 启动（免每次系统弹窗）</string>
+    <string name="shizuku_status_ready">Shizuku 就绪 ✓</string>
+    <string name="shizuku_status_no_perm">Shizuku 已运行但未授权（点击启动按钮触发申请）</string>
+    <string name="shizuku_status_not_running">Shizuku 未运行（用 ADB / 无线调试启动）</string>
+    <string name="shizuku_status_not_installed">未安装 Shizuku（可不装，走默认 MediaProjection）</string>
+
+    <!-- 通知 -->
+    <string name="notif_channel_name">截屏翻译服务</string>
+    <string name="notif_channel_desc">前台运行截屏 + OCR + 翻译</string>
+    <string name="notif_title">屏译 · 运行中</string>
+    <string name="notif_text">点悬浮按钮触发识别 · 长按切换自动翻译</string>
+
+    <!-- 默认 Prompt -->
+    <string name="a11y_desc">监听音量键作为全局快捷键触发截屏翻译。只在设置里手动开启后生效，不读取屏幕内容。</string>
+    <string name="a11y_summary">屏译 · 音量键触发器</string>
+    <string name="default_prompt">你是一名专业的译者，把下面的原文翻译成中文（简体）。要求：\n1. 保留人名、地名等专有名词；\n2. 自然流畅，避免直译腔；\n3. 只输出译文，不加解释、不加引号。\n原文：</string>
+</resources>
