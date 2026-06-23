@@ -43,7 +43,6 @@ class MlKitOcrEngine @Inject constructor() : OcrEngine {
             OcrEngineKind.ML_KIT_AUTO -> autoRecognize(input)
             OcrEngineKind.BAIDU,
             OcrEngineKind.TENCENT,
-            OcrEngineKind.NCNN_JAPANESE_VERTICAL,
             OcrEngineKind.PADDLE_ONNX -> autoRecognize(input) // 路由层应当已转走，这里兜底
         }
     }

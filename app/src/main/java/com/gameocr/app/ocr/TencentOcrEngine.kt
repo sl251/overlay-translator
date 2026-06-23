@@ -1,10 +1,14 @@
 package com.gameocr.app.ocr
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.util.Base64
+import com.gameocr.app.R
 import com.gameocr.app.data.OcrEngineKind
 import com.gameocr.app.data.SettingsRepository
+import com.gameocr.app.data.withApiTimeout
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import javax.inject.Inject
@@ -40,6 +44,7 @@ import java.util.TimeZone
  */
 @Singleton
 class TencentOcrEngine @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val client: OkHttpClient,
     private val json: Json,
     private val settingsRepository: SettingsRepository
@@ -48,7 +53,7 @@ class TencentOcrEngine @Inject constructor(
     override suspend fun recognize(bitmap: Bitmap, kind: OcrEngineKind): List<TextBlock> {
         val s = settingsRepository.get()
         if (s.tencentSecretId.isBlank() || s.tencentSecretKey.isBlank()) {
-            throw IllegalStateException("腾讯云 OCR 未配置 SecretId / SecretKey")
+            throw IllegalStateException(appContext.getString(R.string.err_tencent_no_keys))
         }
         val region = s.tencentRegion.ifBlank { "ap-guangzhou" }
         val imgB64 = withContext(Dispatchers.Default) {
@@ -61,20 +66,23 @@ class TencentOcrEngine @Inject constructor(
             put("ImageBase64", imgB64)
         })
 
+        val timedClient = client.withApiTimeout(s.apiTimeoutSeconds)
+        val endpoint = s.tencentOcrEndpoint
         val resp = withContext(Dispatchers.IO) {
             doSignedCall(
+                httpClient = timedClient,
                 secretId = s.tencentSecretId,
                 secretKey = s.tencentSecretKey,
                 service = SERVICE,
                 host = HOST,
                 region = region,
-                action = ACTION,
+                action = endpoint.action,
                 version = VERSION,
                 payload = payload
             )
         }
         if (resp.response?.error != null) {
-            throw RuntimeException("Tencent OCR ${resp.response.error.code}: ${resp.response.error.message}")
+            throw RuntimeException("Tencent OCR ${resp.response.error.code} (${endpoint.name}): ${resp.response.error.message}")
         }
         val items = resp.response?.textDetections.orEmpty()
         return items.mapIndexed { i, item ->
@@ -96,6 +104,7 @@ class TencentOcrEngine @Inject constructor(
     }
 
     private fun doSignedCall(
+        httpClient: okhttp3.OkHttpClient,
         secretId: String,
         secretKey: String,
         service: String,
@@ -153,11 +162,16 @@ class TencentOcrEngine @Inject constructor(
             .post(body)
             .build()
 
-        return client.newCall(request).execute().use { r ->
+        return httpClient.newCall(request).execute().use { r ->
             val raw = r.body?.string().orEmpty()
             if (!r.isSuccessful) throw RuntimeException("Tencent HTTP ${r.code}: ${raw.take(200)}")
             runCatching { json.decodeFromString<TencentOcrResponse>(raw) }
-                .getOrElse { throw RuntimeException("Tencent 解析失败: ${raw.take(200)}", it) }
+                .getOrElse {
+                    throw RuntimeException(
+                        appContext.getString(R.string.err_tencent_parse_failed_format, raw.take(200)),
+                        it
+                    )
+                }
         }
     }
 
@@ -185,7 +199,6 @@ class TencentOcrEngine @Inject constructor(
     companion object {
         private const val HOST = "ocr.tencentcloudapi.com"
         private const val SERVICE = "ocr"
-        private const val ACTION = "GeneralBasicOCR"
         private const val VERSION = "2018-11-19"
     }
 

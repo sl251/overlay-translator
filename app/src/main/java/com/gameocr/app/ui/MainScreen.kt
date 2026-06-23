@@ -17,8 +17,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -28,11 +30,17 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -48,11 +56,13 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import com.gameocr.app.R
 import com.gameocr.app.capture.CaptureRegion
 import com.gameocr.app.capture.MediaProjectionRequestActivity
 import com.gameocr.app.capture.RegionPickerActivity
@@ -70,6 +80,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun MainScreen(
     onOpenSettings: () -> Unit,
+    onOpenLogs: () -> Unit,
     viewModel: MainViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -79,6 +90,20 @@ fun MainScreen(
     var shizukuAvail by remember { mutableStateOf(ShizukuCapabilities.Availability.NOT_INSTALLED) }
     var batteryOk by remember { mutableStateOf(false) }
     val serviceRunning by CaptureServiceState.running.collectAsState()
+    var startMode by remember { mutableStateOf(StartMode.MEDIA_PROJECTION) }
+    var userOverrodeMode by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Shizuku 就绪时默认选 Shizuku（用户未手动切换过的前提下）。
+    // 进入页面时 shizukuAvail 还在初始 NOT_INSTALLED，等 ON_RESUME 探测完才真实；
+    // 这里跟着变化走，确保用户进来直接看到最优选项。
+    LaunchedEffect(shizukuAvail) {
+        if (!userOverrodeMode) {
+            startMode = if (shizukuAvail == ShizukuCapabilities.Availability.READY ||
+                shizukuAvail == ShizukuCapabilities.Availability.INSTALLED_NOT_GRANTED
+            ) StartMode.SHIZUKU else StartMode.MEDIA_PROJECTION
+        }
+    }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -102,22 +127,27 @@ fun MainScreen(
             TopAppBar(
                 title = {
                     Text(
-                        "屏译",
+                        stringResource(R.string.app_name),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold
                     )
                 },
                 actions = {
+                    TextButton(onClick = onOpenLogs) {
+                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = null)
+                        Text(" ${stringResource(R.string.main_logs)}", modifier = Modifier.padding(start = 4.dp))
+                    }
                     TextButton(onClick = onOpenSettings) {
                         Icon(Icons.Default.Settings, contentDescription = null)
-                        Text(" 设置", modifier = Modifier.padding(start = 4.dp))
+                        Text(" ${stringResource(R.string.main_settings)}", modifier = Modifier.padding(start = 4.dp))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
                 )
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { inner ->
         Column(
             modifier = Modifier
@@ -136,11 +166,11 @@ fun MainScreen(
                 serviceRunning = serviceRunning
             )
 
-            // 主操作：启动
-            ActionCard(title = if (serviceRunning) "服务运行中" else "启动截屏服务") {
+            // 主操作：截屏服务
+            ActionCard(title = stringResource(R.string.main_section_capture)) {
                 if (!canDrawOverlay) {
                     Button(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
                         onClick = {
                             val intent = Intent(
                                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -148,60 +178,126 @@ fun MainScreen(
                             )
                             context.startActivity(intent)
                         }
-                    ) { Text("先授权悬浮窗") }
+                    ) { Text(stringResource(R.string.main_action_grant_overlay_first)) }
                 } else {
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !serviceRunning,
-                        onClick = {
-                            context.startActivity(MediaProjectionRequestActivity.newIntent(context))
-                        }
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        Text(
-                            if (serviceRunning) "  已在运行" else "  MediaProjection 启动",
-                            modifier = Modifier.padding(start = 4.dp)
-                        )
-                    }
+                    val shizukuUsable = shizukuAvail == ShizukuCapabilities.Availability.READY ||
+                        shizukuAvail == ShizukuCapabilities.Availability.INSTALLED_NOT_GRANTED
 
-                    if (shizukuAvail != ShizukuCapabilities.Availability.NOT_INSTALLED) {
-                        OutlinedButton(
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = !serviceRunning,
+                    // 大主按钮：未运行 → primary 色"启动"；运行中 → error 色"停止"
+                    if (serviceRunning) {
+                        Button(
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                            ),
+                            onClick = { context.startService(CaptureService.stopIntent(context)) }
+                        ) {
+                            Icon(Icons.Default.Stop, contentDescription = null)
+                            Text("  ${stringResource(R.string.main_action_stop)}", modifier = Modifier.padding(start = 4.dp))
+                        }
+                    } else {
+                        val modeLabel = if (startMode == StartMode.SHIZUKU) "Shizuku" else "MediaProjection"
+                        Button(
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
                             onClick = {
-                                scope.launch {
-                                    val ok = viewModel.ensureShizukuPermission()
-                                    shizukuAvail = viewModel.shizukuAvailability(context)
-                                    if (ok) {
-                                        val svc = Intent(context, CaptureService::class.java).apply {
-                                            action = CaptureService.ACTION_START
-                                            putExtra(CaptureService.EXTRA_USE_SHIZUKU, true)
-                                        }
-                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                            ContextCompat.startForegroundService(context, svc)
+                                when (startMode) {
+                                    StartMode.MEDIA_PROJECTION ->
+                                        context.startActivity(
+                                            MediaProjectionRequestActivity.newIntent(context)
+                                        )
+                                    StartMode.SHIZUKU -> scope.launch {
+                                        val ok = viewModel.ensureShizukuPermission()
+                                        shizukuAvail = viewModel.shizukuAvailability(context)
+                                        if (ok) {
+                                            val svc = Intent(context, CaptureService::class.java).apply {
+                                                action = CaptureService.ACTION_START
+                                                putExtra(CaptureService.EXTRA_USE_SHIZUKU, true)
+                                            }
+                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                                ContextCompat.startForegroundService(context, svc)
+                                            } else {
+                                                context.startService(svc)
+                                            }
                                         } else {
-                                            context.startService(svc)
+                                            snackbarHostState.showSnackbar(
+                                                context.getString(R.string.main_snack_shizuku_denied)
+                                            )
                                         }
                                     }
                                 }
                             }
-                        ) { Text("Shizuku 启动（免每次弹窗）") }
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null)
+                            Text(
+                                "  ${stringResource(R.string.main_action_start_format, modeLabel)}",
+                                modifier = Modifier.padding(start = 4.dp)
+                            )
+                        }
                     }
 
-                    OutlinedButton(
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = serviceRunning,
-                        onClick = { context.startService(CaptureService.stopIntent(context)) }
-                    ) { Text(if (serviceRunning) "停止服务" else "服务未运行") }
+                    // 启动方式 tabs：服务运行中禁止切换；Shizuku 不可用时该项禁用
+                    Text(
+                        stringResource(R.string.main_label_start_mode),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = startMode == StartMode.MEDIA_PROJECTION,
+                            onClick = {
+                                startMode = StartMode.MEDIA_PROJECTION
+                                userOverrodeMode = true
+                            },
+                            enabled = !serviceRunning,
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                            label = { Text("MediaProjection") }
+                        )
+                        SegmentedButton(
+                            selected = startMode == StartMode.SHIZUKU,
+                            onClick = {
+                                startMode = StartMode.SHIZUKU
+                                userOverrodeMode = true
+                            },
+                            enabled = !serviceRunning && shizukuUsable,
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                            label = { Text("Shizuku") }
+                        )
+                    }
+                    val hintRes = when {
+                        startMode == StartMode.MEDIA_PROJECTION -> R.string.main_hint_media_projection
+                        shizukuAvail == ShizukuCapabilities.Availability.READY -> R.string.main_hint_shizuku_ready
+                        shizukuAvail == ShizukuCapabilities.Availability.INSTALLED_NOT_GRANTED -> R.string.main_hint_shizuku_not_granted
+                        shizukuAvail == ShizukuCapabilities.Availability.NOT_RUNNING -> R.string.main_hint_shizuku_not_running
+                        else -> R.string.main_hint_shizuku_not_installed
+                    }
+                    Text(
+                        stringResource(hintRes),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    // 悬浮圆球的交互说明：用户经常找不到"循环模式"在哪里开关，集中在这里说一下
+                    Text(
+                        stringResource(R.string.main_label_usage),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                    Text(
+                        stringResource(R.string.main_usage_text),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 
             // 区域
-            ActionCard(title = "截屏区域") {
+            ActionCard(title = stringResource(R.string.main_section_region)) {
                 OutlinedButton(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = { context.startActivity(RegionPickerActivity.newIntent(context)) }
-                ) { Text("框选区域") }
+                ) { Text(stringResource(R.string.main_btn_pick_region)) }
                 if (region != null) {
                     TextButton(
                         modifier = Modifier.fillMaxWidth(),
@@ -211,18 +307,34 @@ fun MainScreen(
                                 region = null
                             }
                         }
-                    ) { Text("清除区域，恢复整屏") }
+                    ) { Text(stringResource(R.string.main_btn_clear_region)) }
                 }
             }
 
-            // 系统兼容
-            ActionCard(title = "系统兼容引导") {
+            // 系统兼容：自启动 + 电池白名单是两件事，拆成两个按钮分别引导。
+            // 电池白名单可通过 PowerManager 检测当前状态，已加入时按钮显示已开启并禁用，
+            // 让用户清楚下一步该点哪个；自启动没有公开 API 可探测，按钮始终可点。
+            ActionCard(title = stringResource(R.string.main_section_rom_guide)) {
                 OutlinedButton(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
                         RomHelper.launchFirstAvailable(context, RomHelper.autoStartIntents(context))
                     }
-                ) { Text("打开自启动 / 电池白名单设置") }
+                ) { Text(stringResource(R.string.main_btn_open_autostart)) }
+                OutlinedButton(
+                    enabled = !batteryOk,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        RomHelper.launchFirstAvailable(context, RomHelper.batteryWhitelistIntents(context))
+                    }
+                ) {
+                    Text(
+                        stringResource(
+                            if (batteryOk) R.string.main_btn_battery_already_ok
+                            else R.string.main_btn_open_battery_whitelist
+                        )
+                    )
+                }
             }
 
             // 底部留空
@@ -253,32 +365,36 @@ private fun StatusCard(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                "当前状态",
+                stringResource(R.string.main_status_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
             StatusRow(
-                "截屏服务",
+                stringResource(R.string.main_status_capture_service),
                 ok = serviceRunning,
-                detail = if (serviceRunning) "运行中" else "未运行"
+                detail = stringResource(if (serviceRunning) R.string.main_status_running else R.string.main_status_idle)
             )
-            StatusRow("悬浮窗权限", canDrawOverlay)
+            StatusRow(stringResource(R.string.main_status_overlay_perm), canDrawOverlay)
             StatusRow(
-                "截屏区域",
+                stringResource(R.string.main_status_region),
                 ok = true,
-                detail = region?.let { "${it.width}×${it.height} @ (${it.left},${it.top})" } ?: "整屏"
+                detail = region?.let {
+                    stringResource(R.string.main_status_region_format, it.width, it.height, it.left, it.top)
+                } ?: stringResource(R.string.main_status_region_full)
             )
             StatusRow(
-                "Shizuku",
+                stringResource(R.string.main_status_shizuku),
                 ok = shizukuAvail == ShizukuCapabilities.Availability.READY,
-                detail = when (shizukuAvail) {
-                    ShizukuCapabilities.Availability.READY -> "就绪"
-                    ShizukuCapabilities.Availability.INSTALLED_NOT_GRANTED -> "未授权"
-                    ShizukuCapabilities.Availability.NOT_RUNNING -> "服务未运行"
-                    ShizukuCapabilities.Availability.NOT_INSTALLED -> "未安装"
-                }
+                detail = stringResource(
+                    when (shizukuAvail) {
+                        ShizukuCapabilities.Availability.READY -> R.string.main_status_shizuku_ready
+                        ShizukuCapabilities.Availability.INSTALLED_NOT_GRANTED -> R.string.main_status_shizuku_not_granted
+                        ShizukuCapabilities.Availability.NOT_RUNNING -> R.string.main_status_shizuku_not_running
+                        ShizukuCapabilities.Availability.NOT_INSTALLED -> R.string.main_status_shizuku_not_installed
+                    }
+                )
             )
-            StatusRow("电池白名单", batteryOk)
+            StatusRow(stringResource(R.string.main_status_battery_whitelist), batteryOk)
         }
     }
 }
@@ -303,7 +419,7 @@ private fun StatusRow(label: String, ok: Boolean, detail: String? = null) {
                 .weight(1f)
         )
         Text(
-            text = detail ?: if (ok) "已开" else "未开",
+            text = detail ?: stringResource(if (ok) R.string.main_status_enabled else R.string.main_status_disabled),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -334,6 +450,9 @@ private fun ActionCard(title: String, content: @Composable () -> Unit) {
         }
     }
 }
+
+/** 用户在主屏选择的截屏服务启动方式。仅 App 进程内记忆，不持久化（用户每次启动后默认 MediaProjection）。 */
+private enum class StartMode { MEDIA_PROJECTION, SHIZUKU }
 
 @HiltViewModel
 class MainViewModel @Inject constructor(

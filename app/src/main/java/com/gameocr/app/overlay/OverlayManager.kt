@@ -35,7 +35,11 @@ class OverlayManager(
     @Volatile var customBg: Int = 0xE6000000.toInt(),
     @Volatile var customFg: Int = 0xFFFFFFFF.toInt(),
     @Volatile var customBorder: Int = 0,
-    @Volatile var customBorderWidthDp: Int = 0
+    @Volatile var customBorderWidthDp: Int = 0,
+    /** 允许译文换行。关闭后强制单行（可能横向溢出原文宽度）。 */
+    @Volatile var allowWrap: Boolean = true,
+    /** 启用碰撞检测：限制译文不挤进相邻原文的 box。关闭后只受屏幕边界约束。 */
+    @Volatile var avoidCollision: Boolean = true
 ) {
 
     private val wm by lazy { context.getSystemService(Context.WINDOW_SERVICE) as WindowManager }
@@ -85,10 +89,13 @@ class OverlayManager(
         loadingView = container
     }
 
-    private fun clearLoading() {
+    /** 关闭 loading 圈。captureOnce 失败 / 帧差跳过等"没有译文要显示"的路径里调用，避免一直转圈。 */
+    fun dismissLoading() {
         loadingView?.let { runCatching { wm.removeView(it) } }
         loadingView = null
     }
+
+    private fun clearLoading() = dismissLoading()
 
     fun showFullScreen(pairs: List<Pair<String, String>>) {
         clearLoading()
@@ -131,7 +138,11 @@ class OverlayManager(
         if (blocks.isEmpty()) return
 
         val root = FrameLayout(context).apply { this.alpha = this@OverlayManager.alpha }
-        val screenW = context.resources.displayMetrics.widthPixels
+        val dm = context.resources.displayMetrics
+        val screenW = dm.widthPixels
+        val screenH = dm.heightPixels
+        // 估算每行像素高度（行间距系数 1.3，跟 setLineSpacing 一致）
+        val lineHeightPx = (textSizeSp * dm.density * 1.3f).toInt().coerceAtLeast(16)
 
         // 所有 bounding box 一份用于碰撞检测（不影响 blocks 原始顺序，流式 updateBlockText 仍按 idx 找）
         val allBoxes = blocks.map { it.first.boundingBox }
@@ -142,29 +153,65 @@ class OverlayManager(
             val origW = (b.right - b.left).coerceAtLeast(0)
             val origH = (b.bottom - b.top).coerceAtLeast(0)
 
-            // 找右侧相邻块（同行附近 + left 比本块右）作为 maxWidth 的上限
-            // 这样译文能单行就单行，会撞到隔壁就自动换行（不会越界遮挡）
+            // 四方向碰撞检测：用矩形相交判断"水平重叠"，比"中心距离 < origW"准得多
+            // （短原文 + 长译文的场景，中心距离误判会漏掉下方实际相撞的 box）。
             val verticalTolerance = (origH * 1.5).toInt().coerceAtLeast(30)
-            val rightNeighborLeft = allBoxes.asSequence()
-                .filter { it !== b }
-                .filter { kotlin.math.abs(it.top - b.top) <= verticalTolerance }
-                .filter { it.left > b.right - 10 }
-                .minOfOrNull { it.left }
-                ?: screenW
+
+            // 右邻：同一行内（top 接近）、左边比本块右
+            val rightNeighborLeft = if (avoidCollision) {
+                allBoxes.asSequence()
+                    .filter { it !== b }
+                    .filter { kotlin.math.abs(it.top - b.top) <= verticalTolerance }
+                    .filter { it.left > b.right - 10 }
+                    .minOfOrNull { it.left }
+                    ?: screenW
+            } else screenW
+
             val collisionMaxW = (rightNeighborLeft + regionOffset.x + offsetX - baseLeft - 8)
                 .coerceAtLeast(origW.coerceAtLeast(120))
+            val finalMaxW = minOf(collisionMaxW, screenW - baseLeft - 8).coerceAtLeast(120)
+
+            // 译文展开后的水平范围（OCR 坐标系，取 finalMaxW 作为上限，保守估算最坏情况）
+            val textRightOcr = (baseLeft + finalMaxW - regionOffset.x - offsetX).coerceAtMost(screenW)
+            val textLeftOcr = b.left  // 译文起点对齐原文左边
+
+            val baseTop = when (placement) {
+                OverlayPlacement.BELOW -> b.bottom + regionOffset.y + 2 + offsetY
+                OverlayPlacement.OVERLAP -> b.top + regionOffset.y + offsetY
+                OverlayPlacement.ABOVE -> b.top + regionOffset.y - (textSizeSp * 3).toInt() - 4 + offsetY
+            }
+
+            // 下邻：水平有矩形相交 + top 在本块下方。比"中心距离"准。
+            val belowNeighborTop = if (avoidCollision) {
+                allBoxes.asSequence()
+                    .filter { it !== b }
+                    .filter { it.right > textLeftOcr && it.left < textRightOcr }  // 水平 overlap
+                    .filter { it.top > b.bottom - 4 }
+                    .minOfOrNull { it.top }
+                    ?: screenH
+            } else screenH
 
             val tv = TextView(context).apply {
                 text = dst
                 background = themeBg()
                 setTextColor(themeFgColor())
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp.toFloat())
-                // 允许换行：能单行就单行，撞到隔壁就自动换行
-                setSingleLine(false)
-                maxLines = 6
-                setLineSpacing(2f, 1.05f)
+                if (allowWrap) {
+                    setSingleLine(false)
+                    // maxLines 固定 10 行：showBlocks 时 dst 是占位"…"无法算最终行数；
+                    // updateBlockText 又只更新 text 不动 maxLines；用大值保证段落聚类
+                    // 多行译文不被截断。代价是可能盖到下方相邻原文 box，但比"看到 …"好。
+                    maxLines = 10
+                    setLineSpacing(2f, 1.05f)
+                    // 不显示省略号——即使超过 10 行也直接截，省略号在 OCR 场景看着像 bug
+                    ellipsize = null
+                } else {
+                    // 强制单行模式：保留省略号让用户知道有截断
+                    setSingleLine(true)
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                }
                 isHorizontalFadingEdgeEnabled = false
-                ellipsize = null
                 // 智能 maxWidth：受 (相邻块左边界, 屏幕右边) 双重约束
                 maxWidth = minOf(collisionMaxW, screenW - baseLeft - 8)
                     .coerceAtLeast(120)
@@ -179,11 +226,6 @@ class OverlayManager(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                val baseTop = when (placement) {
-                    OverlayPlacement.BELOW -> b.bottom + regionOffset.y + 2 + offsetY
-                    OverlayPlacement.OVERLAP -> b.top + regionOffset.y + offsetY
-                    OverlayPlacement.ABOVE -> b.top + regionOffset.y - (textSizeSp * 3).toInt() - 4 + offsetY
-                }
                 leftMargin = baseLeft
                 topMargin = baseTop.coerceAtLeast(0)
             }

@@ -34,7 +34,9 @@ object RomHelper {
         }
     }
 
-    /** "自启动" / "后台弹窗" 等 ROM 特定设置页 Intent 列表（按优先级试）。失败回落到电池设置。 */
+    /** "自启动" / "后台弹窗" 等 ROM 特定设置页 Intent 列表（按优先级试）。失败回落到 App 详情页。
+     *  注意：这里不混入电池白名单的 intent；电池白名单走 [batteryWhitelistIntents]，UI 上拆成两个独立按钮。
+     */
     fun autoStartIntents(context: Context): List<Intent> {
         val pkg = context.packageName
         val cn: (String, String) -> Intent = { p, c ->
@@ -70,17 +72,21 @@ object RomHelper {
             )
             Brand.OTHER -> emptyList()
         }
-        return list + batterySettingsFallback(context)
+        // App 详情页作为终极兜底（自启动入口在国内 ROM 里通常藏在这里的"权限管理"下）。
+        return list + Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg"))
     }
 
-    private fun batterySettingsFallback(context: Context): List<Intent> {
+    /** 电池白名单请求 / 设置入口。和 [autoStartIntents] 是不同概念，UI 上独立成一个按钮。 */
+    fun batteryWhitelistIntents(context: Context): List<Intent> {
         val pkg = context.packageName
         val list = mutableListOf<Intent>()
-        // 请求忽略电池优化
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            // 优先弹"是否忽略电池优化"系统对话框，一键加入白名单
             list += Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$pkg"))
+            // 弹窗失败回落到电池优化列表页
             list += Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
         }
+        // 终极兜底：App 详情页
         list += Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg"))
         return list
     }

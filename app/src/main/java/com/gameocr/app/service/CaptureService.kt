@@ -10,12 +10,14 @@ import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.ServiceCompat
+import com.gameocr.app.R
 import com.gameocr.app.capture.CaptureRegion
 import com.gameocr.app.capture.FrameDeduper
 import com.gameocr.app.capture.MediaProjectionScreenshotter
 import com.gameocr.app.capture.Screenshotter
 import com.gameocr.app.capture.ShizukuScreenshotter
 import com.gameocr.app.shizuku.ShizukuCapabilities
+import com.gameocr.app.data.LogRepository
 import com.gameocr.app.data.RenderMode
 import com.gameocr.app.data.Settings
 import com.gameocr.app.data.SettingsRepository
@@ -59,6 +61,7 @@ class CaptureService : Service() {
     @Inject lateinit var ocrEngine: OcrEngine
     @Inject lateinit var translator: Translator
     @Inject lateinit var shizukuCapabilities: ShizukuCapabilities
+    @Inject lateinit var logRepository: LogRepository
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -71,6 +74,10 @@ class CaptureService : Service() {
 
     private val deduper = FrameDeduper()
     private var loopJob: Job? = null
+    // 订阅 SettingsRepository.settings flow，让设置页保存后所有显示项立即生效
+    // （悬浮按钮大小、配色主题、字号、透明度、紧贴文位置 …）。原先只在 captureOnce
+    // 时读 settings，导致用户必须停止/重启服务或触发一次截屏才能看到改动。
+    private var settingsCollectJob: Job? = null
     @Volatile private var loopMode: Boolean = false
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -152,6 +159,18 @@ class CaptureService : Service() {
             floatingButton?.sizeDp = s.floatingButtonSizeDp
             mainScope.launch { floatingButton?.show() }
         }
+
+        // 订阅 settings 热更新：跳过首次 emit（避免和上面 show() 流程重叠初始化），之后任何
+        // 改动都立即应用到 overlay 与悬浮按钮。一次性 collect，cleanupCapture 时取消。
+        settingsCollectJob?.cancel()
+        settingsCollectJob = scope.launch {
+            var first = true
+            settingsRepository.settings.collect { s ->
+                if (first) { first = false; return@collect }
+                applyOverlayConfig(s)
+            }
+        }
+
         CaptureServiceState.setRunning(true)
     }
 
@@ -167,7 +186,8 @@ class CaptureService : Service() {
             loopJob?.cancel()
             loopJob = null
             Timber.i("Loop mode OFF")
-            toast("自动翻译已关闭")
+            logRepository.info(LogRepository.Category.CAPTURE, getString(R.string.log_msg_loop_off))
+            toast(getString(R.string.toast_loop_off))
         } else {
             loopMode = true
             loopJob = scope.launch {
@@ -179,21 +199,37 @@ class CaptureService : Service() {
                 }
             }
             Timber.i("Loop mode ON")
-            toast("自动翻译已开启（每 1 秒一次，再次长按关闭）")
+            logRepository.info(LogRepository.Category.CAPTURE, getString(R.string.log_msg_loop_on))
+            toast(getString(R.string.toast_loop_on))
         }
     }
 
-    private fun toast(msg: String) {
+    private fun toast(msg: String, long: Boolean = false) {
+        val duration = if (long) android.widget.Toast.LENGTH_LONG else android.widget.Toast.LENGTH_SHORT
         mainScope.launch {
-            android.widget.Toast.makeText(this@CaptureService, msg, android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(this@CaptureService, msg, duration).show()
         }
+    }
+
+    /** 截断过长的错误信息：toast 显示完整 stack trace 体验差，截到 ~140 字以内可读即可。 */
+    private fun shortError(t: Throwable): String {
+        val raw = t.message?.takeIf { it.isNotBlank() } ?: t.javaClass.simpleName
+        return if (raw.length > 140) raw.take(140) + "…" else raw
     }
 
     private suspend fun captureOnce() {
         if (!captureLock.tryLock()) return
         try {
             val shotter = screenshotter ?: return
-            val full = shotter.capture() ?: return
+            val full = shotter.capture()
+            if (full == null) {
+                // 截屏链路返回 null（MediaProjection token 失效 / Shizuku 调用失败等），
+                // 之前直接 return，用户只看到圈转一下；现在显式提示。
+                Timber.w("Screenshot capture returned null")
+                logRepository.error(LogRepository.Category.CAPTURE, getString(R.string.log_msg_capture_failed))
+                toast(getString(R.string.toast_capture_failed), long = true)
+                return
+            }
             val settings = settingsRepository.get()
             applyOverlayConfig(settings)
 
@@ -214,12 +250,35 @@ class CaptureService : Service() {
                 ocrEngine.recognize(preprocessed, settings.ocrEngine)
             } catch (t: Throwable) {
                 Timber.w(t, "OCR failed")
+                logRepository.error(
+                    LogRepository.Category.OCR,
+                    getString(R.string.log_msg_ocr_failed_format, settings.ocrEngine.name),
+                    t
+                )
+                // 提示给用户：不然只看到 loading 圈转一下就消失，必须翻日志才知道是 OCR 失败。
+                toast(
+                    getString(R.string.toast_ocr_failed_format, settings.ocrEngine.name, shortError(t)),
+                    long = true
+                )
                 if (preprocessed !== workBitmap) preprocessed.recycle()
                 workBitmap.recycle()
                 return
             }
             if (preprocessed !== workBitmap) preprocessed.recycle()
             workBitmap.recycle()
+            // 把所有 box 拼成"#1 原文 / #2 原文 / ..."一条日志，避免一次 OCR 写多条
+            if (rawBlocks.isNotEmpty()) {
+                val joined = rawBlocks.mapIndexed { i, b -> "#${i + 1} ${b.text}" }.joinToString(" | ")
+                logRepository.info(
+                    LogRepository.Category.OCR,
+                    getString(R.string.log_msg_ocr_results_format, rawBlocks.size, settings.ocrEngine.name, joined)
+                )
+            } else {
+                logRepository.info(
+                    LogRepository.Category.OCR,
+                    getString(R.string.log_msg_ocr_no_result_format, settings.ocrEngine.name)
+                )
+            }
 
             // 预处理 upscale 会让 boundingBox 坐标变成 2 倍，渲染前缩回
             val blocks = if (settings.preprocess.upscale2x) {
@@ -235,6 +294,9 @@ class CaptureService : Service() {
                 RenderMode.BANNER -> renderBanner(blocks, settings)
             }
         } finally {
+            // 兜底：所有提前 return / 异常路径下都要把 loading 圈关掉，避免"一直转圈"。
+            // 正常完成时 showBlocks/showFullScreen 内部已经 dismiss 过；幂等调用没害。
+            mainScope.launch { overlay?.dismissLoading() }
             captureLock.unlock()
         }
     }
@@ -254,29 +316,91 @@ class CaptureService : Service() {
         withContext(Dispatchers.Main) {
             overlay?.showBlocks(blocks.map { it to "…" })
         }
-        // 流式或并行非流式翻译
-        scope.launch {
-            blocks.mapIndexed { idx, block ->
-                async {
-                    translateOne(block.text, settings) { partial ->
-                        mainScope.launch { overlay?.updateBlockText(idx, partial) }
+        // 引擎支持批处理（如 DeepL）→ 一次 HTTP 译多段，避免限频。否则保留逐段流式
+        // 调用 translateOne（OpenAI 兼容 LLM 用户依赖逐 token 流式更新体验）。
+        val routing = translator as? com.gameocr.app.translate.RoutingTranslator
+        val useBatch = routing?.prefersBatchFor(settings) ?: translator.prefersBatch
+        if (useBatch) {
+            scope.launch { batchTranslateBlocks(blocks, settings) }
+        } else {
+            scope.launch {
+                blocks.mapIndexed { idx, block ->
+                    async {
+                        translateOne(block.text, settings) { partial ->
+                            mainScope.launch { overlay?.updateBlockText(idx, partial) }
+                        }
                     }
+                }.awaitAll()
+            }
+        }
+    }
+
+    private suspend fun batchTranslateBlocks(blocks: List<TextBlock>, settings: Settings) {
+        val sources = blocks.map { it.text }
+        val translated = try {
+            withContext(Dispatchers.IO) { translator.translateBatch(sources, settings) }
+        } catch (t: Throwable) {
+            Timber.w(t, "Batch translate failed")
+            logRepository.error(
+                LogRepository.Category.TRANSLATE,
+                getString(R.string.log_msg_batch_translate_failed_format, settings.translatorEngine.name),
+                t
+            )
+            // 整批失败：在所有 box 上显示失败标记
+            withContext(Dispatchers.Main) {
+                blocks.indices.forEach { idx ->
+                    overlay?.updateBlockText(idx, "[!] " + (t.message ?: ""))
                 }
-            }.awaitAll()
+            }
+            return
+        }
+        translated.forEachIndexed { idx, dst ->
+            val src = sources[idx]
+            val finalText = dst ?: src // null 走回退（DeepL 没翻出来）
+            mainScope.launch { overlay?.updateBlockText(idx, finalText) }
+            if (dst != null) {
+                logRepository.pair(LogRepository.Category.TRANSLATE, src, finalText)
+            }
         }
     }
 
     private suspend fun renderBanner(blocks: List<TextBlock>, settings: Settings) {
-        // 横幅模式：等所有翻译完成后整屏一次性显示
+        // 横幅模式：等所有翻译完成后整屏一次性显示。这里也走批处理（如果引擎支持）。
+        val routing = translator as? com.gameocr.app.translate.RoutingTranslator
+        val useBatch = routing?.prefersBatchFor(settings) ?: translator.prefersBatch
         val pairs = withContext(Dispatchers.IO) {
-            blocks.map { block ->
-                val dst = runCatching {
-                    translator.translate(block.text, settings) ?: block.text
-                }.getOrElse { t ->
-                    Timber.w(t, "Translate failed")
-                    "[失败] " + (t.message ?: "")
+            if (useBatch) {
+                val sources = blocks.map { it.text }
+                val translated = runCatching { translator.translateBatch(sources, settings) }
+                    .getOrElse { t ->
+                        logRepository.error(
+                            LogRepository.Category.TRANSLATE,
+                            getString(R.string.log_msg_batch_translate_failed_format, settings.translatorEngine.name),
+                            t
+                        )
+                        List(sources.size) { "[!] " + (t.message ?: "") }
+                    }
+                blocks.mapIndexed { i, b ->
+                    val dst = (translated.getOrNull(i) as? String) ?: b.text
+                    logRepository.pair(LogRepository.Category.TRANSLATE, b.text, dst)
+                    b.text to dst
                 }
-                block.text to dst
+            } else {
+                blocks.map { block ->
+                    val dst = runCatching {
+                        translator.translate(block.text, settings) ?: block.text
+                    }.getOrElse { t ->
+                        Timber.w(t, "Translate failed")
+                        logRepository.error(
+                            LogRepository.Category.TRANSLATE,
+                            getString(R.string.log_msg_translate_failed_simple),
+                            t
+                        )
+                        "[!] " + (t.message ?: "")
+                    }
+                    logRepository.pair(LogRepository.Category.TRANSLATE, block.text, dst)
+                    block.text to dst
+                }
             }
         }
         withContext(Dispatchers.Main) { overlay?.showFullScreen(pairs) }
@@ -289,19 +413,45 @@ class CaptureService : Service() {
     ) {
         try {
             if (settings.streamingTranslate) {
+                // 流式：累计 partial 用于落日志（流末尾的 partial 才是完整译文）
+                var lastPartial = ""
                 translator.translateStream(text, settings)
-                    .catch { e -> onPartial("[失败] " + (e.message ?: "")) }
-                    .onEach { onPartial(it) }
+                    .catch { e ->
+                        onPartial("[!] " + (e.message ?: ""))
+                        logRepository.error(
+                            LogRepository.Category.TRANSLATE,
+                            getString(R.string.log_msg_stream_translate_failed_format, settings.translatorEngine.name),
+                            e
+                        )
+                    }
+                    .onEach {
+                        lastPartial = it
+                        onPartial(it)
+                    }
                     .collect()
+                if (lastPartial.isNotBlank()) {
+                    logRepository.pair(LogRepository.Category.TRANSLATE, text, lastPartial)
+                }
             } else {
                 val dst = translator.translate(text, settings) ?: text
                 onPartial(dst)
+                logRepository.pair(LogRepository.Category.TRANSLATE, text, dst)
             }
         } catch (e: TranslationException) {
-            onPartial("[失败] " + (e.message ?: ""))
+            onPartial("[!] " + (e.message ?: ""))
+            logRepository.error(
+                LogRepository.Category.TRANSLATE,
+                getString(R.string.log_msg_translate_failed_format, settings.translatorEngine.name),
+                e
+            )
         } catch (t: Throwable) {
             Timber.w(t, "Translate unexpected error")
-            onPartial("[异常]")
+            onPartial("[!]")
+            logRepository.error(
+                LogRepository.Category.TRANSLATE,
+                getString(R.string.log_msg_translate_exception_format, settings.translatorEngine.name),
+                t
+            )
         }
     }
 
@@ -318,6 +468,8 @@ class CaptureService : Service() {
             customFg = settings.customFgColor
             customBorder = settings.customBorderColor
             customBorderWidthDp = settings.customBorderWidth
+            allowWrap = settings.overlayAllowWrap
+            avoidCollision = settings.overlayAvoidCollision
         }
         // 圆球大小也同步（已 show 后改 sizeDp 调 applyResize 即时生效）
         floatingButton?.let {
@@ -333,6 +485,8 @@ class CaptureService : Service() {
         loopMode = false
         loopJob?.cancel()
         loopJob = null
+        settingsCollectJob?.cancel()
+        settingsCollectJob = null
         overlay?.clear()
         overlay = null
         floatingButton?.hide()

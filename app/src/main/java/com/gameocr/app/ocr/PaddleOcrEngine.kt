@@ -5,7 +5,11 @@ import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Matrix
+import android.graphics.Paint
 import android.graphics.Rect
+import com.gameocr.app.R
 import com.gameocr.app.data.OcrEngineKind
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -19,7 +23,7 @@ import java.io.File
 import java.nio.FloatBuffer
 
 /**
- * PaddleOCR PP-OCRv4 端侧识别。基于 ONNX Runtime Android，不需要打包 native .so。
+ * PaddleOCR PP-OCRv5 mobile 端侧识别。基于 ONNX Runtime Android，不需要打包 native .so。
  *
  * 三个模型放在 [PaddleModelInstaller.modelsDir]：
  * - `det.onnx` 检测（DBNet）
@@ -56,9 +60,7 @@ class PaddleOcrEngine @Inject constructor(
         if (detSession != null && recSession != null) return@withLock
         val files = modelInstaller.checkInstalled()
         if (files == null) {
-            throw ModelNotReadyException(
-                "PaddleOCR 模型未就位，请在设置里点『下载 PaddleOCR 模型』。"
-            )
+            throw ModelNotReadyException(context.getString(R.string.err_paddle_not_ready))
         }
         val e = env ?: OrtEnvironment.getEnvironment().also { env = it }
         detSession = e.createSession(files.det.absolutePath, OrtSession.SessionOptions())
@@ -72,20 +74,29 @@ class PaddleOcrEngine @Inject constructor(
     }
 
     private fun runFull(bitmap: Bitmap): List<TextBlock> {
-        val rawBoxes = detectBoxes(bitmap)
-        Timber.i("PaddleOCR det boxes=${rawBoxes.size} bitmap=${bitmap.width}x${bitmap.height}")
-        if (rawBoxes.isEmpty()) return emptyList()
-        val sortedBoxes = rawBoxes.sortedWith(compareBy({ it.top }, { it.left }))
-        return sortedBoxes.mapIndexedNotNull { i, box ->
-            val text = recognizeBox(bitmap, box).trim()
-            Timber.i("PaddleOCR box[$i] $box → '$text' (${text.length} chars)")
+        val quads = detectQuads(bitmap)
+        Timber.i("PaddleOCR det quads=${quads.size} bitmap=${bitmap.width}x${bitmap.height}")
+        if (quads.isEmpty()) return emptyList()
+        // 按文字行的 y 中心 + x 中心排序（从上到下，从左到右），跟之前轴对齐 Rect 排序一致
+        val sorted = quads.sortedWith(compareBy({ it.centerY }, { it.centerX }))
+        return sorted.mapIndexedNotNull { i, quad ->
+            val text = recognizeQuad(bitmap, quad).trim()
+            // 把 Quad 转回轴对齐 Rect 供下游叠加层渲染（叠加层目前按 Rect 处理）
+            val bounds = quad.axisAlignedBounds()
+            val rect = Rect(
+                bounds[0].coerceAtLeast(0),
+                bounds[1].coerceAtLeast(0),
+                bounds[2].coerceAtMost(bitmap.width),
+                bounds[3].coerceAtMost(bitmap.height)
+            )
+            Timber.i("PaddleOCR quad[$i] $rect → '$text' (${text.length} chars)")
             if (text.isEmpty()) null
-            else TextBlock(text = text, boundingBox = box, confidence = 1f, recognizedLanguage = "auto")
+            else TextBlock(text = text, boundingBox = rect, confidence = 1f, recognizedLanguage = "auto")
         }
     }
 
-    /** DBNet 检测：固定输入边长 960，输出 prob map → 阈值二值化 → 外接矩形。 */
-    private fun detectBoxes(bitmap: Bitmap): List<Rect> {
+    /** DBNet 检测：把 bitmap 缩到 [DET_LIMIT_SIDE_LEN] 输入，输出 prob map → DBPostprocessor 提取旋转矩形。 */
+    private fun detectQuads(bitmap: Bitmap): List<DBPostprocessor.Quad> {
         val session = detSession ?: return emptyList()
         val e = env ?: return emptyList()
         val (resized, scale) = resizeKeepingAspect(bitmap, DET_LIMIT_SIDE_LEN)
@@ -101,63 +112,29 @@ class PaddleOcrEngine @Inject constructor(
                 val out = res.get(0).value as Array<Array<Array<FloatArray>>>
                 // out shape: [1][1][H][W] prob map
                 val probMap = out[0][0]
-                extractBoxesFromProbMap(probMap, scale)
-            }
-        }
-    }
-
-    /** 简化二值化 + 连通域外接矩形。返回原图坐标系下的 Rect 列表。 */
-    private fun extractBoxesFromProbMap(probMap: Array<FloatArray>, scale: Float): List<Rect> {
-        val h = probMap.size
-        val w = probMap[0].size
-        val visited = Array(h) { BooleanArray(w) }
-        val boxes = mutableListOf<Rect>()
-        for (y in 0 until h) {
-            for (x in 0 until w) {
-                if (visited[y][x] || probMap[y][x] < DET_PROB_THRESH) continue
-                // BFS 找一个连通域
-                var minX = x; var maxX = x; var minY = y; var maxY = y
-                val stack = ArrayDeque<IntArray>()
-                stack.addLast(intArrayOf(x, y))
-                visited[y][x] = true
-                var cnt = 0
-                while (stack.isNotEmpty()) {
-                    val (cx, cy) = stack.removeLast()
-                    cnt++
-                    if (cx < minX) minX = cx
-                    if (cx > maxX) maxX = cx
-                    if (cy < minY) minY = cy
-                    if (cy > maxY) maxY = cy
-                    for ((dx, dy) in NEIGHBORS) {
-                        val nx = cx + dx; val ny = cy + dy
-                        if (nx in 0 until w && ny in 0 until h && !visited[ny][nx] && probMap[ny][nx] >= DET_PROB_THRESH) {
-                            visited[ny][nx] = true
-                            stack.addLast(intArrayOf(nx, ny))
-                        }
-                    }
-                }
-                if (cnt < MIN_BOX_AREA) continue
-                // 略微 padding，再映射回原图
-                val pad = 2
-                val rect = Rect(
-                    ((minX - pad).coerceAtLeast(0) * scale).toInt(),
-                    ((minY - pad).coerceAtLeast(0) * scale).toInt(),
-                    ((maxX + pad).coerceAtMost(w - 1) * scale).toInt(),
-                    ((maxY + pad).coerceAtMost(h - 1) * scale).toInt()
+                DBPostprocessor.extractQuads(
+                    probMap = probMap,
+                    scale = scale,
+                    binThresh = DET_PROB_THRESH,
+                    scoreThresh = DET_BOX_SCORE_THRESH,
+                    unclipRatio = DET_UNCLIP_RATIO
                 )
-                if (rect.width() > 6 && rect.height() > 6) boxes.add(rect)
             }
         }
-        return boxes
     }
 
-    /** CRNN 识别：把 box 区域裁出 → resize 到固定高度 48 → 跑 onnx → CTC decode。 */
-    private fun recognizeBox(src: Bitmap, box: Rect): String {
+    /**
+     * CRNN 识别：用 [Matrix.setPolyToPoly] 把 Quad 4 点透视矫正到水平矩形 → resize 到 H=48 → 跑 onnx → CTC decode。
+     *
+     * 透视矫正对斜排文字 / DBNet 输出的旋转 box 是关键——直接 axis-aligned crop 会把斜文字
+     * 周围的背景一起带进去，rec 在带背景的 crop 上识别率明显下降。
+     */
+    private fun recognizeQuad(src: Bitmap, quad: DBPostprocessor.Quad): String {
         val session = recSession ?: return ""
         val e = env ?: return ""
-        val crop = safeCrop(src, box) ?: return ""
+        val crop = warpCropQuad(src, quad) ?: return ""
 
-        // PP-OCRv4 rec 输入：[1, 3, 48, W]，W 按 ratio 缩放
+        // PP-OCRv5 rec 输入：[1, 3, 48, W]，W 按 ratio 缩放
         val ratio = REC_TARGET_H.toFloat() / crop.height
         val targetW = (crop.width * ratio).toInt().coerceAtLeast(8).coerceAtMost(REC_MAX_W)
         val resized = Bitmap.createScaledBitmap(crop, targetW, REC_TARGET_H, true)
@@ -177,6 +154,53 @@ class PaddleOcrEngine @Inject constructor(
             }
         }
     }
+
+    /**
+     * 用 [Matrix.setPolyToPoly] 实现 cv2.warpPerspective 等价：把 4 点 quad 映射到水平
+     * 矩形（cropW x cropH）。竖排（高 > 宽 1.5 倍）裁出后旋转 90 度，让 rec 模型按横排理解。
+     */
+    private fun warpCropQuad(src: Bitmap, quad: DBPostprocessor.Quad): Bitmap? {
+        val w1 = hypotF(quad.p1.x - quad.p0.x, quad.p1.y - quad.p0.y)
+        val w2 = hypotF(quad.p2.x - quad.p3.x, quad.p2.y - quad.p3.y)
+        val h1 = hypotF(quad.p3.x - quad.p0.x, quad.p3.y - quad.p0.y)
+        val h2 = hypotF(quad.p2.x - quad.p1.x, quad.p2.y - quad.p1.y)
+        val cropW = maxOf(w1, w2).toInt().coerceAtLeast(2)
+        val cropH = maxOf(h1, h2).toInt().coerceAtLeast(2)
+        // 防止超大 crop 撑爆内存（异常 quad 时）
+        if (cropW > 4096 || cropH > 4096) return null
+
+        val srcPts = floatArrayOf(
+            quad.p0.x, quad.p0.y,
+            quad.p1.x, quad.p1.y,
+            quad.p2.x, quad.p2.y,
+            quad.p3.x, quad.p3.y
+        )
+        val dstPts = floatArrayOf(
+            0f, 0f,
+            cropW.toFloat(), 0f,
+            cropW.toFloat(), cropH.toFloat(),
+            0f, cropH.toFloat()
+        )
+        val matrix = Matrix()
+        if (!matrix.setPolyToPoly(srcPts, 0, dstPts, 0, 4)) return null
+
+        val out = runCatching {
+            Bitmap.createBitmap(cropW, cropH, Bitmap.Config.ARGB_8888)
+        }.getOrNull() ?: return null
+        Canvas(out).drawBitmap(src, matrix, WARP_PAINT)
+
+        if (cropH > cropW * 1.5f) {
+            val rotateMatrix = Matrix().apply { postRotate(90f) }
+            val rotated = runCatching {
+                Bitmap.createBitmap(out, 0, 0, cropW, cropH, rotateMatrix, true)
+            }.getOrNull()
+            out.recycle()
+            return rotated
+        }
+        return out
+    }
+
+    private fun hypotF(dx: Float, dy: Float): Float = kotlin.math.hypot(dx, dy)
 
     /** CTC greedy decode：每一步取最大概率，去重 + 去 blank（idx=0）。 */
     private fun ctcDecode(logits: Array<FloatArray>): String {
@@ -209,13 +233,6 @@ class PaddleOcrEngine @Inject constructor(
         return sb.toString()
     }
 
-    private fun safeCrop(src: Bitmap, box: Rect): Bitmap? {
-        val l = box.left.coerceIn(0, src.width - 1)
-        val t = box.top.coerceIn(0, src.height - 1)
-        val r = box.right.coerceIn(l + 1, src.width)
-        val b = box.bottom.coerceIn(t + 1, src.height)
-        return runCatching { Bitmap.createBitmap(src, l, t, r - l, b - t) }.getOrNull()
-    }
 
     /** 等比缩放到最长边 = [limitSideLen]，且边长是 32 的倍数（DBNet 要求）。返回 (resized, scaleBackFactor)。 */
     private fun resizeKeepingAspect(bitmap: Bitmap, limitSideLen: Int): Pair<Bitmap, Float> {
@@ -267,19 +284,31 @@ class PaddleOcrEngine @Inject constructor(
     }
 
     companion object {
-        private const val DET_LIMIT_SIDE_LEN = 960
-        private const val DET_PROB_THRESH = 0.5f       // 之前 0.3 噪声 box 太多；v5 推荐 0.3~0.5
-        private const val MIN_BOX_AREA = 64            // 之前 16 容易召回背景纹理
+        // 1600 比之前的 960 大不少，对 1080p+ 的截图小字（≤24px）召回率提升显著；
+        // v5 mobile det 网络本身允许任意 32 倍数边长。
+        private const val DET_LIMIT_SIDE_LEN = 1600
+        // v5 推荐 0.3。之前用 0.5 把弱响应（细字/低对比度）全砍了。
+        // 噪声靠 box 平均得分 [DET_BOX_SCORE_THRESH] 复核来兜，不靠 bin 阈值。
+        private const val DET_PROB_THRESH = 0.3f
+        // 像素数阈值。prob_map 尺度下 16~24 之间，对应原图大约 8x8 文字块。
+        private const val MIN_BOX_AREA = 16
+        // 对每个联通域取 prob 平均值，低于该阈值视为噪声丢弃。
+        private const val DET_BOX_SCORE_THRESH = 0.6f
+        // DBNet shrink 的逆操作：把 box 向外扩。PaddleOCR 官方默认 1.5~2.0。
+        private const val DET_UNCLIP_RATIO = 1.6f
         private const val REC_TARGET_H = 48
-        private const val REC_MAX_W = 320
+        // CRNN 最大宽度。之前 320 在长地址行（如名片"123-4567Tokyo, Distrik MugiHi..."）
+        // 会把后半截截断；放到 480 后实测能完整读到一整行。
+        private const val REC_MAX_W = 480
         private val DET_MEAN = floatArrayOf(0.485f, 0.456f, 0.406f)
         private val DET_STD = floatArrayOf(0.229f, 0.224f, 0.225f)
-        // PP-OCRv4 rec 用 (img/255 - 0.5) / 0.5
+        // PP-OCRv5 rec 用 (img/255 - 0.5) / 0.5
         private val REC_MEAN = floatArrayOf(0.5f, 0.5f, 0.5f)
         private val REC_STD = floatArrayOf(0.5f, 0.5f, 0.5f)
-        private val NEIGHBORS = arrayOf(
-            intArrayOf(-1, 0), intArrayOf(1, 0),
-            intArrayOf(0, -1), intArrayOf(0, 1)
-        )
+        private val WARP_PAINT = Paint().apply {
+            isAntiAlias = true
+            isFilterBitmap = true
+            isDither = true
+        }
     }
 }

@@ -1,6 +1,7 @@
 package com.gameocr.app.ocr
 
 import android.content.Context
+import com.gameocr.app.R
 import com.gameocr.app.data.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -18,7 +19,7 @@ import java.io.File
 import java.io.FileOutputStream
 
 /**
- * PaddleOCR PP-OCRv4 模型安装器。
+ * PaddleOCR PP-OCRv5 mobile 模型安装器。
  *
  * 三个文件 ([FILE_DET]/[FILE_REC]/[FILE_KEYS]) 按下载源列表依次尝试：
  * - 1. 用户在 settings 自定义的镜像 URL（如果填了）
@@ -82,8 +83,10 @@ class PaddleModelInstaller @Inject constructor(
                 }
             }
             if (!ok) {
-                send(Progress(name, "(all failed)", 0, 0, false, error = lastErr ?: "未知错误"))
-                throw RuntimeException("$name 所有镜像都失败: $lastErr")
+                send(Progress(name, "(all failed)", 0, 0, false, error = lastErr ?: "unknown"))
+                throw RuntimeException(
+                    context.getString(R.string.err_paddle_all_mirrors_failed_format, name, lastErr ?: "")
+                )
             }
         }
     }.flowOn(Dispatchers.IO)
@@ -128,7 +131,11 @@ class PaddleModelInstaller @Inject constructor(
             }
         }
         if (dest.exists()) dest.delete()
-        if (!tmp.renameTo(dest)) throw RuntimeException("rename ${tmp.name} → ${dest.name} 失败")
+        if (!tmp.renameTo(dest)) {
+            throw RuntimeException(
+                context.getString(R.string.err_paddle_rename_failed_format, tmp.name, dest.name)
+            )
+        }
     }
 
     fun deleteAll() {

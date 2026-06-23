@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import com.gameocr.app.R
 import com.gameocr.app.capture.CaptureRegion
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -48,7 +49,6 @@ class SettingsRepository @Inject constructor(
         val TencentId = stringPreferencesKey("tencent_secret_id")
         val TencentKey = stringPreferencesKey("tencent_secret_key")
         val TencentRegion = stringPreferencesKey("tencent_region")
-        val NcnnVertical = booleanPreferencesKey("ncnn_vertical_ja")
         val PreferShizuku = booleanPreferencesKey("prefer_shizuku")
         val Placement = stringPreferencesKey("overlay_placement")
         val PaddleMirror = stringPreferencesKey("paddle_mirror_url")
@@ -63,6 +63,14 @@ class SettingsRepository @Inject constructor(
         val DeeplKey = stringPreferencesKey("deepl_key")
         val DeeplPro = booleanPreferencesKey("deepl_pro")
         val FloatingSize = intPreferencesKey("floating_button_size_dp")
+        // 收藏的语言代码列表，逗号分隔（"ja,zh-CN,en"）。逗号不可能出现在 BCP-47 tag 里，分隔安全。
+        val PinnedLangs = stringPreferencesKey("pinned_languages")
+        val OverlayWrap = booleanPreferencesKey("overlay_allow_wrap")
+        val OverlayCollision = booleanPreferencesKey("overlay_avoid_collision")
+        val BaiduEndpoint = stringPreferencesKey("baidu_ocr_endpoint")
+        val TencentEndpoint = stringPreferencesKey("tencent_ocr_endpoint")
+        val ApiTimeoutSec = intPreferencesKey("api_timeout_seconds")
+        val MergeAdjacent = booleanPreferencesKey("ocr_merge_adjacent")
     }
 
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
@@ -78,7 +86,7 @@ class SettingsRepository @Inject constructor(
             prefs[Keys.BaseUrl] = next.baseUrl
             prefs[Keys.ApiKey] = next.apiKey
             prefs[Keys.Model] = next.model
-            prefs[Keys.SourceLang] = next.sourceLang.name
+            prefs[Keys.SourceLang] = next.sourceLang
             prefs[Keys.TargetLang] = next.targetLang
             prefs[Keys.Prompt] = next.promptTemplate
             prefs[Keys.OcrEngine] = next.ocrEngine.name
@@ -97,7 +105,6 @@ class SettingsRepository @Inject constructor(
             prefs[Keys.TencentId] = next.tencentSecretId
             prefs[Keys.TencentKey] = next.tencentSecretKey
             prefs[Keys.TencentRegion] = next.tencentRegion
-            prefs[Keys.NcnnVertical] = next.ncnnVerticalJapanese
             prefs[Keys.PreferShizuku] = next.preferShizukuCapture
             prefs[Keys.Placement] = next.overlayPlacement.name
             prefs[Keys.PaddleMirror] = next.paddleModelMirrorUrl
@@ -112,6 +119,13 @@ class SettingsRepository @Inject constructor(
             prefs[Keys.DeeplKey] = next.deeplApiKey
             prefs[Keys.DeeplPro] = next.deeplPro
             prefs[Keys.FloatingSize] = next.floatingButtonSizeDp
+            prefs[Keys.PinnedLangs] = next.pinnedLanguages.joinToString(",")
+            prefs[Keys.OverlayWrap] = next.overlayAllowWrap
+            prefs[Keys.OverlayCollision] = next.overlayAvoidCollision
+            prefs[Keys.BaiduEndpoint] = next.baiduOcrEndpoint.name
+            prefs[Keys.TencentEndpoint] = next.tencentOcrEndpoint.name
+            prefs[Keys.ApiTimeoutSec] = next.apiTimeoutSeconds
+            prefs[Keys.MergeAdjacent] = next.mergeAdjacentBlocks
         }
     }
 
@@ -121,10 +135,19 @@ class SettingsRepository @Inject constructor(
             baseUrl = this[Keys.BaseUrl] ?: default.baseUrl,
             apiKey = this[Keys.ApiKey] ?: default.apiKey,
             model = this[Keys.Model] ?: default.model,
-            sourceLang = runCatching { SourceLang.valueOf(this[Keys.SourceLang] ?: "") }
-                .getOrDefault(default.sourceLang),
+            // 兼容 0.1.x 旧用户：那时 sourceLang 用 enum.name（"AUTO"/"JA"/...）保存。
+            // 新版改为 BCP-47 tag（"auto"/"ja"/...）。读出时若是旧大写值，按 mapping 转回。
+            sourceLang = (this[Keys.SourceLang] ?: default.sourceLang).let { raw ->
+                when (raw) {
+                    "AUTO" -> "auto"; "JA" -> "ja"; "ZH" -> "zh-CN"
+                    "EN" -> "en"; "KO" -> "ko"
+                    else -> raw
+                }
+            },
             targetLang = this[Keys.TargetLang] ?: default.targetLang,
-            promptTemplate = this[Keys.Prompt] ?: default.promptTemplate,
+            // 首次启动（Keys.Prompt 不存在）使用资源里的本地化默认 prompt（中文系统给中文，英文给英文）。
+            // 用户保存过自己的 prompt 后这里读到自己的，不会被覆盖。
+            promptTemplate = this[Keys.Prompt] ?: context.getString(R.string.default_prompt),
             ocrEngine = runCatching { OcrEngineKind.valueOf(this[Keys.OcrEngine] ?: "") }
                 .getOrDefault(default.ocrEngine),
             captureLoopIntervalMs = this[Keys.LoopInterval] ?: default.captureLoopIntervalMs,
@@ -147,7 +170,6 @@ class SettingsRepository @Inject constructor(
             tencentSecretId = this[Keys.TencentId] ?: default.tencentSecretId,
             tencentSecretKey = this[Keys.TencentKey] ?: default.tencentSecretKey,
             tencentRegion = this[Keys.TencentRegion] ?: default.tencentRegion,
-            ncnnVerticalJapanese = this[Keys.NcnnVertical] ?: default.ncnnVerticalJapanese,
             preferShizukuCapture = this[Keys.PreferShizuku] ?: default.preferShizukuCapture,
             overlayPlacement = runCatching { OverlayPlacement.valueOf(this[Keys.Placement] ?: "") }
                 .getOrDefault(default.overlayPlacement),
@@ -164,7 +186,20 @@ class SettingsRepository @Inject constructor(
                 .getOrDefault(default.translatorEngine),
             deeplApiKey = this[Keys.DeeplKey] ?: default.deeplApiKey,
             deeplPro = this[Keys.DeeplPro] ?: default.deeplPro,
-            floatingButtonSizeDp = this[Keys.FloatingSize] ?: default.floatingButtonSizeDp
+            floatingButtonSizeDp = this[Keys.FloatingSize] ?: default.floatingButtonSizeDp,
+            pinnedLanguages = this[Keys.PinnedLangs]
+                ?.split(',')
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+                ?: default.pinnedLanguages,
+            overlayAllowWrap = this[Keys.OverlayWrap] ?: default.overlayAllowWrap,
+            overlayAvoidCollision = this[Keys.OverlayCollision] ?: default.overlayAvoidCollision,
+            baiduOcrEndpoint = runCatching { BaiduOcrEndpoint.valueOf(this[Keys.BaiduEndpoint] ?: "") }
+                .getOrDefault(default.baiduOcrEndpoint),
+            tencentOcrEndpoint = runCatching { TencentOcrEndpoint.valueOf(this[Keys.TencentEndpoint] ?: "") }
+                .getOrDefault(default.tencentOcrEndpoint),
+            apiTimeoutSeconds = this[Keys.ApiTimeoutSec] ?: default.apiTimeoutSeconds,
+            mergeAdjacentBlocks = this[Keys.MergeAdjacent] ?: default.mergeAdjacentBlocks
         )
     }
 }

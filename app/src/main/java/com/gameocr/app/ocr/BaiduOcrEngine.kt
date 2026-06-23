@@ -1,10 +1,15 @@
 package com.gameocr.app.ocr
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.util.Base64
+import com.gameocr.app.R
+import com.gameocr.app.data.BaiduOcrEndpoint
 import com.gameocr.app.data.OcrEngineKind
 import com.gameocr.app.data.SettingsRepository
+import com.gameocr.app.data.withApiTimeout
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
@@ -33,6 +38,7 @@ import java.io.ByteArrayOutputStream
  */
 @Singleton
 class BaiduOcrEngine @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val client: OkHttpClient,
     private val json: Json,
     private val settingsRepository: SettingsRepository
@@ -45,38 +51,47 @@ class BaiduOcrEngine @Inject constructor(
     override suspend fun recognize(bitmap: Bitmap, kind: OcrEngineKind): List<TextBlock> {
         val settings = settingsRepository.get()
         if (settings.baiduOcrApiKey.isBlank() || settings.baiduOcrSecretKey.isBlank()) {
-            throw IllegalStateException("百度 OCR 未配置 API Key / Secret Key")
+            throw IllegalStateException(appContext.getString(R.string.err_baidu_no_keys))
         }
-        val token = obtainToken(settings.baiduOcrApiKey, settings.baiduOcrSecretKey)
+        val endpoint = settings.baiduOcrEndpoint
+        val timedClient = client.withApiTimeout(settings.apiTimeoutSeconds)
+        val token = obtainToken(settings.baiduOcrApiKey, settings.baiduOcrSecretKey, timedClient)
         val imageBase64 = withContext(Dispatchers.Default) { encodeJpeg(bitmap) }
 
-        val url = "https://aip.baidubce.com/rest/2.0/ocr/v1/general_basic".toHttpUrl()
+        val url = "https://aip.baidubce.com/rest/2.0/ocr/v1/${endpoint.path}".toHttpUrl()
             .newBuilder().addQueryParameter("access_token", token).build()
         val form = FormBody.Builder().add("image", imageBase64).build()
         val req = Request.Builder().url(url).post(form).build()
 
         val resp = withContext(Dispatchers.IO) {
-            client.newCall(req).execute().use { r ->
+            timedClient.newCall(req).execute().use { r ->
                 val raw = r.body?.string().orEmpty()
                 if (!r.isSuccessful) throw RuntimeException("Baidu OCR HTTP ${r.code}: ${raw.take(200)}")
                 json.decodeFromString<BaiduOcrResponse>(raw)
             }
         }
         if (resp.errorCode != null && resp.errorCode != 0) {
-            throw RuntimeException("Baidu OCR err ${resp.errorCode}: ${resp.errorMsg.orEmpty()}")
+            throw RuntimeException("Baidu OCR err ${resp.errorCode} (${endpoint.name}): ${resp.errorMsg.orEmpty()}")
         }
-        // 百度通用识别不返回 boundingBox（除非用 general 高级版），整段当一个 block
         return resp.wordsResult.orEmpty().mapIndexed { i, w ->
+            // 含位置版用真实 boundingBox；无位置版退化为垂直排列的伪 Rect 让叠加层能逐条显示
+            val box = w.location?.let { loc ->
+                val left = loc.left ?: 0
+                val top = loc.top ?: 0
+                val width = loc.width ?: 0
+                val height = loc.height ?: 0
+                Rect(left, top, left + width, top + height)
+            } ?: Rect(0, 80 + i * 60, bitmap.width, 80 + (i + 1) * 60)
             TextBlock(
                 text = w.words.orEmpty(),
-                boundingBox = Rect(0, 80 + i * 60, bitmap.width, 80 + (i + 1) * 60),
+                boundingBox = box,
                 confidence = 1f,
                 recognizedLanguage = "auto"
             )
         }
     }
 
-    private suspend fun obtainToken(apiKey: String, secret: String): String = tokenMutex.withLock {
+    private suspend fun obtainToken(apiKey: String, secret: String, httpClient: OkHttpClient): String = tokenMutex.withLock {
         val now = System.currentTimeMillis()
         cachedToken?.takeIf { now < tokenExpiresAt - 60_000 }?.let { return@withLock it }
 
@@ -87,7 +102,7 @@ class BaiduOcrEngine @Inject constructor(
             .build()
         val req = Request.Builder().url(url).post(FormBody.Builder().build()).build()
         val token = withContext(Dispatchers.IO) {
-            client.newCall(req).execute().use { r ->
+            httpClient.newCall(req).execute().use { r ->
                 val raw = r.body?.string().orEmpty()
                 if (!r.isSuccessful) throw RuntimeException("Baidu token HTTP ${r.code}: ${raw.take(200)}")
                 val parsed = json.decodeFromString<BaiduTokenResponse>(raw)
@@ -125,5 +140,16 @@ class BaiduOcrEngine @Inject constructor(
     )
 
     @Serializable
-    private data class BaiduWords(val words: String? = null)
+    private data class BaiduLocation(
+        val top: Int? = null,
+        val left: Int? = null,
+        val width: Int? = null,
+        val height: Int? = null
+    )
+
+    @Serializable
+    private data class BaiduWords(
+        val words: String? = null,
+        val location: BaiduLocation? = null
+    )
 }

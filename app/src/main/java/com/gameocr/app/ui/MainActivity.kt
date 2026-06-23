@@ -30,7 +30,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Route { Main, Settings }
+private enum class Route { Main, Settings, Logs }
 
 @Composable
 private fun AppRoot() {
@@ -41,8 +41,12 @@ private fun AppRoot() {
             .background(MaterialTheme.colorScheme.background)
     ) {
         when (route) {
-            Route.Main -> MainScreen(onOpenSettings = { route = Route.Settings })
+            Route.Main -> MainScreen(
+                onOpenSettings = { route = Route.Settings },
+                onOpenLogs = { route = Route.Logs }
+            )
             Route.Settings -> SettingsScreen(onBack = { route = Route.Main })
+            Route.Logs -> LogScreen(onBack = { route = Route.Main })
         }
     }
 }

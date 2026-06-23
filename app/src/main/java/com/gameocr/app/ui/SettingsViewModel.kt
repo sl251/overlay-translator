@@ -1,21 +1,25 @@
 package com.gameocr.app.ui
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
+import com.gameocr.app.R
 import com.gameocr.app.data.OcrEngineKind
 import com.gameocr.app.data.OverlayPlacement
 import com.gameocr.app.data.OverlayTheme
 import com.gameocr.app.data.PreprocessOptions
 import com.gameocr.app.data.RenderMode
-import com.gameocr.app.data.SourceLang
 import com.gameocr.app.data.Settings
 import com.gameocr.app.data.SettingsRepository
+import com.gameocr.app.data.TranslatorEngine
 import com.gameocr.app.ocr.PaddleModelInstaller
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.flow.collect
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val repo: SettingsRepository,
     private val paddleInstaller: PaddleModelInstaller
 ) : ViewModel() {
@@ -28,7 +32,7 @@ class SettingsViewModel @Inject constructor(
         apiKey: String,
         model: String,
         targetLang: String,
-        sourceLang: SourceLang,
+        sourceLang: String,
         prompt: String,
         textSize: Int,
         alpha: Float,
@@ -46,11 +50,21 @@ class SettingsViewModel @Inject constructor(
         ocrEngine: OcrEngineKind,
         baiduKey: String,
         baiduSecret: String,
+        baiduEndpoint: com.gameocr.app.data.BaiduOcrEndpoint,
         tencentId: String,
         tencentKey: String,
+        tencentEndpoint: com.gameocr.app.data.TencentOcrEndpoint,
         preprocess: PreprocessOptions,
         a11yVolume: Boolean,
-        floatingButtonSizeDp: Int
+        floatingButtonSizeDp: Int,
+        allowWrap: Boolean,
+        avoidCollision: Boolean,
+        apiTimeoutSeconds: Int,
+        mergeAdjacentBlocks: Boolean,
+        translatorEngine: TranslatorEngine,
+        deeplKey: String,
+        deeplPro: Boolean,
+        paddleMirror: String
     ) {
         repo.update {
             it.copy(
@@ -58,7 +72,7 @@ class SettingsViewModel @Inject constructor(
                 apiKey = apiKey.trim(),
                 model = model.trim(),
                 targetLang = targetLang.trim(),
-                sourceLang = sourceLang,
+                sourceLang = sourceLang.trim(),
                 promptTemplate = prompt,
                 overlayTextSizeSp = textSize.coerceIn(10, 28),
                 overlayAlpha = alpha.coerceIn(0.3f, 1f),
@@ -76,11 +90,21 @@ class SettingsViewModel @Inject constructor(
                 ocrEngine = ocrEngine,
                 baiduOcrApiKey = baiduKey.trim(),
                 baiduOcrSecretKey = baiduSecret.trim(),
+                baiduOcrEndpoint = baiduEndpoint,
                 tencentSecretId = tencentId.trim(),
                 tencentSecretKey = tencentKey.trim(),
+                tencentOcrEndpoint = tencentEndpoint,
                 preprocess = preprocess,
                 a11yVolumeTrigger = a11yVolume,
-                floatingButtonSizeDp = floatingButtonSizeDp.coerceIn(32, 96)
+                floatingButtonSizeDp = floatingButtonSizeDp.coerceIn(32, 96),
+                overlayAllowWrap = allowWrap,
+                overlayAvoidCollision = avoidCollision,
+                apiTimeoutSeconds = apiTimeoutSeconds.coerceIn(5, 300),
+                mergeAdjacentBlocks = mergeAdjacentBlocks,
+                translatorEngine = translatorEngine,
+                deeplApiKey = deeplKey.trim(),
+                deeplPro = deeplPro,
+                paddleModelMirrorUrl = paddleMirror.trim()
             )
         }
     }
@@ -89,30 +113,54 @@ class SettingsViewModel @Inject constructor(
         repo.update { it.copy(paddleModelMirrorUrl = url.trim()) }
     }
 
+    /**
+     * 切换语言星标。已收藏则移除；未收藏则追加到末尾。立即落盘，绕过 SettingsScreen
+     * 的 dirty 检测——星标是用户的小操作，不应该等"保存"按钮。
+     */
+    suspend fun togglePinLanguage(code: String) {
+        repo.update { current ->
+            val list = current.pinnedLanguages
+            val next = if (list.contains(code)) list - code else list + code
+            current.copy(pinnedLanguages = next)
+        }
+    }
+
     fun paddleModelStatus(): String {
         val files = paddleInstaller.checkInstalled()
         return if (files != null) {
             val total = (files.det.length() + files.rec.length() + files.keys.length()) / 1024
-            "PaddleOCR 模型已就绪 ✓ (${total} KB)"
+            appContext.getString(R.string.settings_paddle_status_ready_format, total.toInt())
         } else {
-            "PaddleOCR 模型未下载（填镜像 URL 后点下载）"
+            appContext.getString(R.string.settings_paddle_status_missing_hint)
         }
     }
 
     suspend fun downloadPaddleModels(onProgress: (String) -> Unit) {
         paddleInstaller.downloadAll().collect { p ->
             val mirrorTag = p.mirror.substringAfter("//").substringBefore("/").take(24)
-            onProgress(
-                when {
-                    p.error != null -> "[$mirrorTag] ${p.file} 失败: ${p.error}"
-                    p.done -> "✓ ${p.file} 完成 (${p.downloaded / 1024} KB) @ $mirrorTag"
-                    p.total > 0 -> {
-                        val pct = (p.downloaded * 100 / p.total).toInt()
-                        "[$mirrorTag] ${p.file} $pct% (${p.downloaded / 1024}/${p.total / 1024} KB)"
-                    }
-                    else -> "[$mirrorTag] ${p.file} ${p.downloaded / 1024} KB"
+            val msg = when {
+                p.error != null -> appContext.getString(
+                    R.string.settings_paddle_progress_failed_format,
+                    mirrorTag, p.file, p.error
+                )
+                p.done -> appContext.getString(
+                    R.string.settings_paddle_progress_done_format,
+                    p.file, (p.downloaded / 1024).toInt(), mirrorTag
+                )
+                p.total > 0 -> {
+                    val pct = (p.downloaded * 100 / p.total).toInt()
+                    appContext.getString(
+                        R.string.settings_paddle_progress_format,
+                        mirrorTag, p.file, pct,
+                        (p.downloaded / 1024).toInt(), (p.total / 1024).toInt()
+                    )
                 }
-            )
+                else -> appContext.getString(
+                    R.string.settings_paddle_progress_simple_format,
+                    mirrorTag, p.file, (p.downloaded / 1024).toInt()
+                )
+            }
+            onProgress(msg)
         }
     }
 
