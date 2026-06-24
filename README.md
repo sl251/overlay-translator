@@ -60,9 +60,13 @@
 |---|---|
 | <img src="docs/screenshots/overlay-discord-dark.png" width="320" alt="经典深色译文叠加" /> | <img src="docs/screenshots/overlay-discord-light.png" width="320" alt="浅色纸张译文叠加" /> |
 
-**漫画 / 字幕场景** —— Firefox 浏览韩文漫画，气泡内韩文按列识别后中文译文紧贴覆盖：
+**游戏场景** —— Sandship UI 的中文识别与覆盖：
 
-<img src="docs/screenshots/overlay-game.png" width="360" alt="漫画译文叠加" />
+<img src="docs/screenshots/overlay-game.png" width="640" alt="游戏内译文叠加" />
+
+**漫画 / 字幕场景** —— 韩文漫画气泡按列识别后中文译文紧贴覆盖：
+
+<img src="docs/screenshots/overlay-manga.png" width="360" alt="漫画译文叠加" />
 
 **设置页**：
 

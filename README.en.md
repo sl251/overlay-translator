@@ -60,9 +60,13 @@ No ROOT, fully self-contained, designed for visual novels, manga, game dialogue 
 |---|---|
 | <img src="docs/screenshots/overlay-discord-dark.png" width="320" alt="Classic dark overlay" /> | <img src="docs/screenshots/overlay-discord-light.png" width="320" alt="Paper light overlay" /> |
 
-**Comic / subtitle scene** — Korean manga in Firefox, vertical bubbles OCR'd and Chinese translation glued to each column:
+**In-game** — Sandship UI, Chinese detected and overlaid:
 
-<img src="docs/screenshots/overlay-game.png" width="360" alt="Manga overlay" />
+<img src="docs/screenshots/overlay-game.png" width="640" alt="In-game overlay" />
+
+**Comic / subtitle scene** — Korean manga bubbles OCR'd by column, Chinese translation glued to source:
+
+<img src="docs/screenshots/overlay-manga.png" width="360" alt="Manga overlay" />
 
 **Settings**:
 
