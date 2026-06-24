@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">GameOcr</string>
+    <string name="app_name">PingYi</string>
 
     <!-- Common -->
     <string name="common_back">Back</string>
@@ -227,6 +227,13 @@
     <string name="settings_avoid_collision_hint">With collision detection: the overlay won\'t intrude into the next text box on the right; wrapped lines shrink in height to fit the box below.</string>
     <string name="settings_merge_adjacent">Merge adjacent boxes in same row (avoid fragmentation overlap)</string>
     <string name="settings_merge_adjacent_hint">In comics / subtitles, OCR often splits one sentence into adjacent small boxes (\"WHEN SHE | SOBERS UP. | THANK\"), causing overlays to overlap. When enabled, these are merged into one box before translation, eliminating the overlap at the source.</string>
+    <string name="settings_merge_strength_label">Merge strength</string>
+    <string name="settings_merge_strength_conservative">Conservative</string>
+    <string name="settings_merge_strength_standard">Standard</string>
+    <string name="settings_merge_strength_aggressive">Aggressive</string>
+    <string name="settings_merge_strength_conservative_hint">Strict thresholds: rarely over-merges but paragraphs may stay split. Suits visual novels / dense long passages.</string>
+    <string name="settings_merge_strength_standard_hint">Balanced default, suits most scenarios.</string>
+    <string name="settings_merge_strength_aggressive_hint">Loose thresholds: merges multi-line bubbles more readily. Recommended for comics / short bubbles; may merge adjacent bubbles by accident.</string>
     <string name="settings_floating_size_format">Floating button size: %1$d dp</string>
     <string name="settings_loop_interval_label">Auto-loop interval (ms)</string>
     <string name="settings_a11y_volume_label">Volume key trigger (requires accessibility service)</string>
@@ -322,7 +329,7 @@
 
     <!-- CaptureService toasts -->
     <string name="toast_loop_off">Auto translate off</string>
-    <string name="toast_loop_on">Auto translate on (every 1s, long-press again to stop)</string>
+    <string name="toast_loop_on">Auto translate on (every %1$ss, long-press again to stop)</string>
     <string name="toast_capture_failed">Capture failed: no frame. Try restarting capture.</string>
     <string name="toast_ocr_failed_format">OCR failed [%1$s]: %2$s</string>
 
@@ -384,11 +391,27 @@
 
     <!-- Source-language → OCR engine linkage prompt -->
     <string name="ocr_lang_issue_title">OCR engine may not recognize this</string>
-    <string name="ocr_lang_issue_msg">You switched source language to \"%1$s\", but the current OCR engine may not recognize it well.\nRecommend switching to \"%2$s\".</string>
+    <string name="ocr_lang_issue_msg">Source language is \"%1$s\"; the current OCR engine may not recognize it well.\nRecommend switching to \"%2$s\".</string>
+    <string name="ocr_lang_issue_msg_tune">Source language is \"%1$s\"; the current \"%2$s\" engine\'s recognition language is \"%3$s\", which may not recognize it well.\nRecommend \"%4$s\" — tap \"Apply\" to adjust (engine will not change).</string>
+    <string name="ocr_lang_issue_msg_source_tune">\"%1$s\" recognition language is \"%2$s\", but the source language is \"%3$s\".\nRecommend changing the source language to \"%4$s\" — tap \"Apply\" to adjust.</string>
     <string name="ocr_lang_issue_msg_keys_missing">For \"%1$s\", \"%2$s\" (cloud OCR) is recommended. Add the matching API key in the OCR settings.</string>
     <string name="ocr_lang_issue_btn_apply">Apply</string>
     <string name="ocr_lang_issue_btn_setup">Go to settings</string>
     <string name="ocr_lang_issue_btn_keep">Keep as-is</string>
+
+    <!-- Check for updates (GitHub Releases API) -->
+    <string name="update_btn_check">Check for updates</string>
+    <string name="update_btn_checking">Checking…</string>
+    <string name="update_dialog_title_new">Update available</string>
+    <string name="update_dialog_title_uptodate">Up to date</string>
+    <string name="update_dialog_title_failed">Check failed</string>
+    <string name="update_dialog_versions_format">Current %1$s → Latest %2$s</string>
+    <string name="update_dialog_failed_format">%1$s\n\nApi.github.com may be unreachable from some networks; tap below to open the Release page manually.</string>
+    <string name="update_dialog_btn_download">Download</string>
+    <string name="update_dialog_btn_later">Later</string>
+    <string name="update_dialog_btn_ok">OK</string>
+    <string name="update_dialog_btn_close">Close</string>
+    <string name="update_dialog_btn_open_release">Open Release page</string>
 
     <!-- Tencent OCR endpoint names / desc -->
     <string name="tencent_endpoint_general_basic_name">General print</string>

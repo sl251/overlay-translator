@@ -94,6 +94,7 @@ import com.gameocr.app.data.OverlayPlacement
 import com.gameocr.app.data.OverlayTheme
 import com.gameocr.app.data.PreprocessOptions
 import com.gameocr.app.data.RenderMode
+import com.gameocr.app.data.Settings
 import com.gameocr.app.data.TranslatorEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -152,12 +153,15 @@ fun SettingsScreen(
     var avoidCollision by remember { mutableStateOf(true) }
     var apiTimeoutSec by remember { mutableStateOf(30f) }
     var mergeAdjacent by remember { mutableStateOf(true) }
+    var mergeStrength by remember { mutableStateOf(com.gameocr.app.data.MergeStrength.STANDARD) }
     // 星标语言：本地镜像。togglePinLanguage 立即落盘，下次 ON_RESUME / load() 拉回最新；
     // 这里也乐观更新一份本地状态，UI 立刻反映。
     var pinnedLanguages by remember { mutableStateOf<List<String>>(emptyList()) }
 
-    // 用于 dirty 检测：加载时的初始快照
-    var initialSnapshot by remember { mutableStateOf<List<Any?>?>(null) }
+    // dirty 检测：load 时 capture 一份初始 Settings，之后跟 buildSnapshot() 比 equals。
+    // 旧版手写两份 List<Any?>，每加 Settings 字段都要在两个 list 同步加，反复犯"忘改一边"的 bug。
+    // 现在用 data class equals 自动覆盖所有字段——加字段只改 buildSnapshot() 一处。
+    var initialSettings by remember { mutableStateOf<Settings?>(null) }
     var showUnsavedDialog by remember { mutableStateOf(false) }
 
     // —— 搜索：顶部输入 → 下拉匹配项 → 点击 animateScrollTo 到对应 section 顶部 ——
@@ -168,25 +172,60 @@ fun SettingsScreen(
     var searchQuery by remember { mutableStateOf("") }
     val searchFocusRequester = remember { FocusRequester() }
 
-    // dirty 检测：包到 derivedStateOf，避免每次 recompose 都重建 30+ 元素 list。
-    // Snapshot state 变化时才重算。
-    val currentSnapshot: List<Any?> by remember {
-        derivedStateOf {
-            listOf(
-                baseUrl, apiKey, model, prompt, targetLang, sourceLang,
-                translatorEngine, deeplKey, deeplPro,
-                textSize, alpha, loopInterval, streaming, renderMode, placement, overlayTheme,
-                customBg, customFg, customBorder, customBorderW,
-                offsetX, offsetY, ocrEngine,
-                baiduKey, baiduSecret, baiduEndpoint, baiduLanguage,
-                tencentId, tencentKey, tencentEndpoint, tencentLanguage, paddleMirror,
-                preUpscale, preInvert, preBinarize, a11yVolume, floatingSize,
-                allowWrap, avoidCollision, apiTimeoutSec, mergeAdjacent
-            )
-        }
-    }
+    // 从当前所有 state 构造一份 Settings 实例。`Settings()` 默认值起手，`.copy(...)` 覆盖设置页
+    // 能改的字段；不在设置页改的字段（captureRegion / preferShizukuCapture / tencentRegion /
+    // pinnedLanguages）保留 Settings 默认占位——initial 和 current 都用同一默认值，equals 时这些
+    // 字段始终相等，dirty 只反映用户在本页的实际改动。
+    //
+    // 类型转换跟 doSave 保持一致（textSize.toInt() / loopInterval.toLongOrNull() 等）。
+    fun buildSnapshot(): Settings = Settings().copy(
+        baseUrl = baseUrl,
+        apiKey = apiKey,
+        model = model,
+        sourceLang = sourceLang,
+        targetLang = targetLang,
+        promptTemplate = prompt,
+        ocrEngine = ocrEngine,
+        captureLoopIntervalMs = loopInterval.toLongOrNull() ?: 2000L,
+        overlayTextSizeSp = textSize.toInt(),
+        overlayAlpha = alpha,
+        streamingTranslate = streaming,
+        renderMode = renderMode,
+        overlayPlacement = placement,
+        overlayTheme = overlayTheme,
+        customBgColor = customBg,
+        customFgColor = customFg,
+        customBorderColor = customBorder,
+        customBorderWidth = customBorderW.toInt(),
+        overlayOffsetX = offsetX.toInt(),
+        overlayOffsetY = offsetY.toInt(),
+        preprocess = PreprocessOptions(preUpscale, preInvert, preBinarize),
+        baiduOcrApiKey = baiduKey,
+        baiduOcrSecretKey = baiduSecret,
+        baiduOcrEndpoint = baiduEndpoint,
+        baiduOcrLanguage = baiduLanguage,
+        tencentSecretId = tencentId,
+        tencentSecretKey = tencentKey,
+        tencentOcrEndpoint = tencentEndpoint,
+        tencentOcrLanguage = tencentLanguage,
+        paddleModelMirrorUrl = paddleMirror,
+        a11yVolumeTrigger = a11yVolume,
+        translatorEngine = translatorEngine,
+        deeplApiKey = deeplKey,
+        deeplPro = deeplPro,
+        floatingButtonSizeDp = floatingSize.toInt(),
+        overlayAllowWrap = allowWrap,
+        overlayAvoidCollision = avoidCollision,
+        apiTimeoutSeconds = apiTimeoutSec.toInt(),
+        mergeAdjacentBlocks = mergeAdjacent,
+        mergeStrength = mergeStrength
+    )
+    // derivedStateOf 让 lambda 在依赖 state 变化时才重新计算 equals
     val dirty by remember {
-        derivedStateOf { initialSnapshot != null && currentSnapshot != initialSnapshot }
+        derivedStateOf {
+            val initial = initialSettings ?: return@derivedStateOf false
+            initial != buildSnapshot()
+        }
     }
 
     val doSave: suspend () -> Unit = {
@@ -194,7 +233,7 @@ fun SettingsScreen(
             baseUrl = baseUrl, apiKey = apiKey, model = model,
             targetLang = targetLang, sourceLang = sourceLang, prompt = prompt,
             textSize = textSize.toInt(), alpha = alpha,
-            loopMs = loopInterval.toLongOrNull() ?: 1000L,
+            loopMs = loopInterval.toLongOrNull() ?: 2000L,
             streaming = streaming, renderMode = renderMode, placement = placement,
             overlayTheme = overlayTheme,
             customBg = customBg, customFg = customFg,
@@ -212,6 +251,7 @@ fun SettingsScreen(
             avoidCollision = avoidCollision,
             apiTimeoutSeconds = apiTimeoutSec.toInt(),
             mergeAdjacentBlocks = mergeAdjacent,
+            mergeStrength = mergeStrength,
             translatorEngine = translatorEngine,
             deeplKey = deeplKey,
             deeplPro = deeplPro,
@@ -250,35 +290,81 @@ fun SettingsScreen(
         )
     }
 
-    // 源语言切换联动 OCR：检查当前引擎能不能识别该源语言，不能就弹推荐切换
+    // 源语言↔OCR 联动：检查能否识别当前源语言；不能则按"用户刚动的是哪一边"决定推荐方向。
     var ocrLangIssue by remember { mutableStateOf<OcrLangIssue?>(null) }
     var langCheckPrimed by remember { mutableStateOf(false) }
     var lastCheckedLang by remember { mutableStateOf<String?>(null) }
     // dismissedFor 只在"本次会话内同一语言已被用户点过保持不变"时生效；用户切到别的语言再切回
-    // 来就重新检查。注意这跟"sourceLang 已经是 dismissedFor 的值但 LaunchedEffect 因 OCR
-    // 端点变化而重跑"区分开来：那种情况里 lastCheckedLang == sourceLang，不当作新切语言。
+    // 来就重新检查。
     var langDismissedFor by remember { mutableStateOf<String?>(null) }
+    // 跟踪上次 OCR 端的完整状态。下次 LaunchedEffect 跑时和当前比对，判断这次"主要"是
+    // 改了源语言还是改了 OCR 端，进而决定推荐方向：
+    //  - 源语言变 → 推荐改 OCR（旧行为）
+    //  - OCR 端变 → 推荐改源语言（修复"撤销用户操作"的 bug）
+    var prevOcrEngine by remember { mutableStateOf(ocrEngine) }
+    var prevBaiduEndpoint by remember { mutableStateOf(baiduEndpoint) }
+    var prevBaiduLanguage by remember { mutableStateOf(baiduLanguage) }
+    var prevTencentEndpoint by remember { mutableStateOf(tencentEndpoint) }
+    var prevTencentLanguage by remember { mutableStateOf(tencentLanguage) }
     LaunchedEffect(
         sourceLang, ocrEngine,
         baiduEndpoint, baiduLanguage,
         tencentEndpoint, tencentLanguage
     ) {
+        timber.log.Timber.tag("OcrLangLink").i(
+            "[trigger] sourceLang=%s ocrEngine=%s baiduEp=%s baiduLang=%s tencentEp=%s tencentLang=%s | primed=%s lastChecked=%s dismissedFor=%s",
+            sourceLang, ocrEngine, baiduEndpoint, baiduLanguage,
+            tencentEndpoint, tencentLanguage,
+            langCheckPrimed, lastCheckedLang, langDismissedFor
+        )
         // 首次跑（load 完成那一瞬间）跳过；只在用户真正改 state 时触发
         if (!langCheckPrimed) {
             langCheckPrimed = true
             lastCheckedLang = sourceLang
+            prevOcrEngine = ocrEngine
+            prevBaiduEndpoint = baiduEndpoint
+            prevBaiduLanguage = baiduLanguage
+            prevTencentEndpoint = tencentEndpoint
+            prevTencentLanguage = tencentLanguage
+            timber.log.Timber.tag("OcrLangLink").i(
+                "[skip-prime] first run, set primed=true lastChecked=%s -> no dialog", sourceLang
+            )
             return@LaunchedEffect
         }
+        val sourceChanged = sourceLang != lastCheckedLang
+        val ocrSideChanged = ocrEngine != prevOcrEngine ||
+            baiduEndpoint != prevBaiduEndpoint || baiduLanguage != prevBaiduLanguage ||
+            tencentEndpoint != prevTencentEndpoint || tencentLanguage != prevTencentLanguage
+        timber.log.Timber.tag("OcrLangLink").i(
+            "[direction] sourceChanged=%s ocrSideChanged=%s", sourceChanged, ocrSideChanged
+        )
         // 源语言换成了别的值：清掉上次 dismissed，相当于"用户对新语言态度待定，需要重新提示"
-        if (sourceLang != lastCheckedLang) {
+        if (sourceChanged) {
+            timber.log.Timber.tag("OcrLangLink").i(
+                "[lang-changed] %s -> %s, clearing dismissedFor(was=%s)",
+                lastCheckedLang, sourceLang, langDismissedFor
+            )
             langDismissedFor = null
             lastCheckedLang = sourceLang
         }
+        // 同步 prev（在所有 early return 之前，避免下次再误判同一次变化）
+        prevOcrEngine = ocrEngine
+        prevBaiduEndpoint = baiduEndpoint
+        prevBaiduLanguage = baiduLanguage
+        prevTencentEndpoint = tencentEndpoint
+        prevTencentLanguage = tencentLanguage
+
         if (sourceLang.isBlank()) {
             ocrLangIssue = null
+            timber.log.Timber.tag("OcrLangLink").i("[skip-blank] sourceLang is blank -> no dialog")
             return@LaunchedEffect
         }
-        if (sourceLang == langDismissedFor) return@LaunchedEffect
+        if (sourceLang == langDismissedFor) {
+            timber.log.Timber.tag("OcrLangLink").i(
+                "[skip-dismissed] sourceLang=%s already in dismissedFor -> no dialog", sourceLang
+            )
+            return@LaunchedEffect
+        }
         val supported = com.gameocr.app.ocr.OcrLanguageCapability.supports(
             engine = ocrEngine,
             sourceCode = sourceLang,
@@ -287,9 +373,58 @@ fun SettingsScreen(
             baiduLanguage = baiduLanguage,
             tencentLanguage = tencentLanguage
         )
+        timber.log.Timber.tag("OcrLangLink").i(
+            "[supports] engine=%s lang=%s -> %s", ocrEngine, sourceLang, supported
+        )
         if (supported) {
-            ocrLangIssue = null
+            // supports=true 仍可能不是"最优"：云端 AUTO_DETECT / CHN_ENG / MIX 等通用模式
+            // 对小语种识别准确率明显低于精确指定 language。如果用户刚改了 sourceLang 或
+            // OCR 端，且枚举里有精确匹配项，弹"升级"建议——只是切云端内部 language，不换引擎。
+            val better = com.gameocr.app.ocr.OcrLanguageCapability.betterOcrLanguageFor(
+                sourceCode = sourceLang,
+                engine = ocrEngine,
+                baiduEndpoint = baiduEndpoint,
+                baiduLanguage = baiduLanguage,
+                tencentEndpoint = tencentEndpoint,
+                tencentLanguage = tencentLanguage
+            )
+            if (better != null && (sourceChanged || ocrSideChanged)) {
+                timber.log.Timber.tag("OcrLangLink").i(
+                    "[upgrade] supports=true but better config available: %s", better
+                )
+                ocrLangIssue = OcrLangIssue.FixOcr(sourceLang, better)
+                timber.log.Timber.tag("OcrLangLink").i(
+                    "[dialog] SHOW for sourceLang=%s (upgrade)", sourceLang
+                )
+            } else {
+                ocrLangIssue = null
+                timber.log.Timber.tag("OcrLangLink").i("[skip-supported] -> no dialog")
+            }
             return@LaunchedEffect
+        }
+        // 方向选择：用户刚动 OCR 端（且源语言没动）→ 优先反向推荐改源语言；反向无解
+        // （OCR 端是通用模式如 CHN_ENG / MIX，没有单一对应 BCP-47）→ fallback 到 forward，
+        // 避免静默——总比让用户摸不清当前配置识别不了源语言强。
+        if (ocrSideChanged && !sourceChanged) {
+            val targetSource = com.gameocr.app.ocr.OcrLanguageCapability.inferSourceFor(
+                engine = ocrEngine,
+                baiduLanguage = baiduLanguage,
+                tencentLanguage = tencentLanguage
+            )
+            timber.log.Timber.tag("OcrLangLink").i(
+                "[reverse-recommend] inferredSource=%s currentSource=%s", targetSource, sourceLang
+            )
+            if (targetSource != null && targetSource != sourceLang) {
+                ocrLangIssue = OcrLangIssue.FixSource(sourceLang, targetSource)
+                timber.log.Timber.tag("OcrLangLink").i(
+                    "[dialog] SHOW for sourceLang=%s (reverse)", sourceLang
+                )
+                return@LaunchedEffect
+            }
+            // 反向失败 → fallthrough 到 forward 推荐（在下面统一处理）
+            timber.log.Timber.tag("OcrLangLink").i(
+                "[reverse-fallback] no inferred source, fallback to forward recommendation"
+            )
         }
         val rec = com.gameocr.app.ocr.OcrLanguageCapability.recommendFor(
             sourceCode = sourceLang,
@@ -299,55 +434,122 @@ fun SettingsScreen(
             hasBaiduKey = baiduKey.isNotBlank() && baiduSecret.isNotBlank(),
             hasTencentKey = tencentId.isNotBlank() && tencentKey.isNotBlank()
         )
-        ocrLangIssue = rec?.let { OcrLangIssue(sourceLang, it) }
+        timber.log.Timber.tag("OcrLangLink").i("[recommend] rec=%s", rec)
+        ocrLangIssue = rec?.let { OcrLangIssue.FixOcr(sourceLang, it) }
+        timber.log.Timber.tag("OcrLangLink").i(
+            "[dialog] %s for sourceLang=%s (forward)",
+            if (ocrLangIssue != null) "SHOW" else "skip(no-rec)", sourceLang
+        )
     }
     ocrLangIssue?.let { issue ->
         val sourceName = com.gameocr.app.data.Languages.nameOf(context, issue.sourceCode)
-        val rec = issue.recommendation
-        val recEngineLabel = stringResource(ocrEngineLabelRes(rec.engine))
         AlertDialog(
             onDismissRequest = {
+                timber.log.Timber.tag("OcrLangLink").i(
+                    "[dialog-dismiss-outside] mark dismissedFor=%s", issue.sourceCode
+                )
                 langDismissedFor = issue.sourceCode
                 ocrLangIssue = null
             },
             title = { Text(stringResource(R.string.ocr_lang_issue_title)) },
             text = {
-                Text(
-                    if (rec.keysMissing) stringResource(
-                        R.string.ocr_lang_issue_msg_keys_missing, sourceName, recEngineLabel
-                    ) else stringResource(
-                        R.string.ocr_lang_issue_msg, sourceName, recEngineLabel
-                    )
-                )
+                when (issue) {
+                    is OcrLangIssue.FixOcr -> {
+                        // 三段式文案：keysMissing > tune（同引擎，仅改内部语种参数）> 默认（换引擎）
+                        val rec = issue.recommendation
+                        val recEngineLabel = stringResource(ocrEngineLabelRes(rec.engine))
+                        val tuneNewLabel: String = when {
+                            rec.engine == OcrEngineKind.BAIDU && rec.baiduLanguage != null ->
+                                stringResource(rec.baiduLanguage.displayNameRes)
+                            rec.engine == OcrEngineKind.TENCENT && rec.tencentLanguage != null ->
+                                stringResource(rec.tencentLanguage.displayNameRes)
+                            else -> ""
+                        }
+                        val tuneOldLabel: String = when (rec.engine) {
+                            OcrEngineKind.BAIDU -> stringResource(baiduLanguage.displayNameRes)
+                            OcrEngineKind.TENCENT -> stringResource(tencentLanguage.displayNameRes)
+                            else -> ""
+                        }
+                        val isTuneMode = !rec.keysMissing && rec.engine == ocrEngine && tuneNewLabel.isNotEmpty()
+                        Text(
+                            when {
+                                rec.keysMissing -> stringResource(
+                                    R.string.ocr_lang_issue_msg_keys_missing, sourceName, recEngineLabel
+                                )
+                                isTuneMode -> stringResource(
+                                    R.string.ocr_lang_issue_msg_tune,
+                                    sourceName, recEngineLabel, tuneOldLabel, tuneNewLabel
+                                )
+                                else -> stringResource(
+                                    R.string.ocr_lang_issue_msg, sourceName, recEngineLabel
+                                )
+                            }
+                        )
+                    }
+                    is OcrLangIssue.FixSource -> {
+                        // 反向：用户改了 OCR 端，推荐改源语言去匹配
+                        val engineLabel = stringResource(ocrEngineLabelRes(ocrEngine))
+                        val ocrLangLabel: String = when (ocrEngine) {
+                            OcrEngineKind.BAIDU -> stringResource(baiduLanguage.displayNameRes)
+                            OcrEngineKind.TENCENT -> stringResource(tencentLanguage.displayNameRes)
+                            // ML_KIT 单语种引擎：用引擎自身的 chip label 代替"识别语种"概念
+                            else -> engineLabel
+                        }
+                        val recSourceName = com.gameocr.app.data.Languages.nameOf(
+                            context, issue.recommendedSourceCode
+                        )
+                        Text(stringResource(
+                            R.string.ocr_lang_issue_msg_source_tune,
+                            engineLabel, ocrLangLabel, sourceName, recSourceName
+                        ))
+                    }
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    if (rec.keysMissing) {
-                        // 切到推荐引擎让用户能看到对应 key 输入框，然后滚到 OCR section
-                        ocrEngine = rec.engine
-                        rec.baiduEndpoint?.let { baiduEndpoint = it }
-                        rec.tencentEndpoint?.let { tencentEndpoint = it }
-                        scope.launch {
-                            anchors[SectionKeys.OCR]?.let { y -> scrollState.animateScrollTo(y) }
+                    when (issue) {
+                        is OcrLangIssue.FixOcr -> {
+                            val rec = issue.recommendation
+                            timber.log.Timber.tag("OcrLangLink").i(
+                                "[dialog-apply-ocr] keysMissing=%s rec=%s", rec.keysMissing, rec
+                            )
+                            if (rec.keysMissing) {
+                                ocrEngine = rec.engine
+                                rec.baiduEndpoint?.let { baiduEndpoint = it }
+                                rec.tencentEndpoint?.let { tencentEndpoint = it }
+                                scope.launch {
+                                    anchors[SectionKeys.OCR]?.let { y -> scrollState.animateScrollTo(y) }
+                                }
+                            } else {
+                                ocrEngine = rec.engine
+                                rec.baiduEndpoint?.let { baiduEndpoint = it }
+                                rec.baiduLanguage?.let { baiduLanguage = it }
+                                rec.tencentEndpoint?.let { tencentEndpoint = it }
+                                rec.tencentLanguage?.let { tencentLanguage = it }
+                            }
                         }
-                    } else {
-                        // 直接应用推荐配置
-                        ocrEngine = rec.engine
-                        rec.baiduEndpoint?.let { baiduEndpoint = it }
-                        rec.baiduLanguage?.let { baiduLanguage = it }
-                        rec.tencentEndpoint?.let { tencentEndpoint = it }
-                        rec.tencentLanguage?.let { tencentLanguage = it }
+                        is OcrLangIssue.FixSource -> {
+                            timber.log.Timber.tag("OcrLangLink").i(
+                                "[dialog-apply-source] %s -> %s",
+                                sourceLang, issue.recommendedSourceCode
+                            )
+                            sourceLang = issue.recommendedSourceCode
+                        }
                     }
                     ocrLangIssue = null
                 }) {
+                    val keysMissing = (issue as? OcrLangIssue.FixOcr)?.recommendation?.keysMissing == true
                     Text(stringResource(
-                        if (rec.keysMissing) R.string.ocr_lang_issue_btn_setup
+                        if (keysMissing) R.string.ocr_lang_issue_btn_setup
                         else R.string.ocr_lang_issue_btn_apply
                     ))
                 }
             },
             dismissButton = {
                 TextButton(onClick = {
+                    timber.log.Timber.tag("OcrLangLink").i(
+                        "[dialog-keep] mark dismissedFor=%s", issue.sourceCode
+                    )
                     langDismissedFor = issue.sourceCode
                     ocrLangIssue = null
                 }) { Text(stringResource(R.string.ocr_lang_issue_btn_keep)) }
@@ -357,64 +559,68 @@ fun SettingsScreen(
 
     LaunchedEffect(Unit) {
         val s = viewModel.load()
-        baseUrl = s.baseUrl
-        apiKey = s.apiKey
-        model = s.model
-        // 用户切了 UI 语言但 prompt 仍是上一个 locale 的默认值时，自动迁移到当前 locale 默认；
-        // 已定制的 prompt 原样保留。返回值用于本地 state（也已落盘）。
-        prompt = viewModel.migrateDefaultPromptIfStale(context)
-        targetLang = s.targetLang
-        sourceLang = s.sourceLang
-        translatorEngine = s.translatorEngine
-        deeplKey = s.deeplApiKey
-        deeplPro = s.deeplPro
-        textSize = s.overlayTextSizeSp.toFloat()
-        alpha = s.overlayAlpha
-        loopInterval = s.captureLoopIntervalMs.toString()
-        streaming = s.streamingTranslate
-        renderMode = s.renderMode
-        placement = s.overlayPlacement
-        overlayTheme = s.overlayTheme
-        customBg = s.customBgColor
-        customFg = s.customFgColor
-        customBorder = s.customBorderColor
-        customBorderW = s.customBorderWidth.toFloat()
-        offsetX = s.overlayOffsetX.toFloat()
-        offsetY = s.overlayOffsetY.toFloat()
-        ocrEngine = s.ocrEngine
-        baiduKey = s.baiduOcrApiKey
-        baiduSecret = s.baiduOcrSecretKey
-        baiduEndpoint = s.baiduOcrEndpoint
-        baiduLanguage = s.baiduOcrLanguage
-        tencentId = s.tencentSecretId
-        tencentKey = s.tencentSecretKey
-        tencentEndpoint = s.tencentOcrEndpoint
-        tencentLanguage = s.tencentOcrLanguage
-        paddleMirror = s.paddleModelMirrorUrl
-        // 不阻塞主线程：file.exists() + file.length() 走 IO Dispatcher。先给占位
-        // 文字，IO 完成后再覆盖；进设置的瞬间不卡顿。
-        paddleStatus = context.getString(R.string.settings_paddle_status_checking)
-        preUpscale = s.preprocess.upscale2x
-        preInvert = s.preprocess.invert
-        preBinarize = s.preprocess.binarize
-        a11yVolume = s.a11yVolumeTrigger
-        floatingSize = s.floatingButtonSizeDp.toFloat()
-        pinnedLanguages = s.pinnedLanguages
-        allowWrap = s.overlayAllowWrap
-        avoidCollision = s.overlayAvoidCollision
-        apiTimeoutSec = s.apiTimeoutSeconds.toFloat()
-        mergeAdjacent = s.mergeAdjacentBlocks
-        // 捕获初始快照，用于 dirty 检测
-        initialSnapshot = listOf(
-            baseUrl, apiKey, model, prompt, targetLang, sourceLang,
-            translatorEngine, deeplKey, deeplPro,
-            textSize, alpha, loopInterval, streaming, renderMode, placement, overlayTheme,
-            customBg, customFg, customBorder, customBorderW,
-            offsetX, offsetY, ocrEngine,
-            baiduKey, baiduSecret, baiduEndpoint, tencentId, tencentKey, tencentEndpoint, paddleMirror,
-            preUpscale, preInvert, preBinarize, a11yVolume, floatingSize,
-            allowWrap, avoidCollision, apiTimeoutSec, mergeAdjacent
+        // suspend 操作必须在 Snapshot 块外做完
+        val migratedPrompt = viewModel.migrateDefaultPromptIfStale(context)
+        val paddleStatusPlaceholder = context.getString(R.string.settings_paddle_status_checking)
+        timber.log.Timber.tag("OcrLangLink").i(
+            "[load] sourceLang=%s ocrEngine=%s baiduEp=%s baiduLang=%s tencentEp=%s tencentLang=%s",
+            s.sourceLang, s.ocrEngine, s.baiduOcrEndpoint, s.baiduOcrLanguage,
+            s.tencentOcrEndpoint, s.tencentOcrLanguage
         )
+        // 关键性能：把 40+ state 写入封进同一个 mutable snapshot，原子 apply 后只触发
+        // 一次 observer 通知，避免 Compose 在每个 state 变化时 schedule 一次 recomposition
+        // / derivedStateOf 重算，进设置页那段"卡一下"主要来自这里。
+        androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
+            baseUrl = s.baseUrl
+            apiKey = s.apiKey
+            model = s.model
+            prompt = migratedPrompt
+            targetLang = s.targetLang
+            sourceLang = s.sourceLang
+            translatorEngine = s.translatorEngine
+            deeplKey = s.deeplApiKey
+            deeplPro = s.deeplPro
+            textSize = s.overlayTextSizeSp.toFloat()
+            alpha = s.overlayAlpha
+            loopInterval = s.captureLoopIntervalMs.toString()
+            streaming = s.streamingTranslate
+            renderMode = s.renderMode
+            placement = s.overlayPlacement
+            overlayTheme = s.overlayTheme
+            customBg = s.customBgColor
+            customFg = s.customFgColor
+            customBorder = s.customBorderColor
+            customBorderW = s.customBorderWidth.toFloat()
+            offsetX = s.overlayOffsetX.toFloat()
+            offsetY = s.overlayOffsetY.toFloat()
+            ocrEngine = s.ocrEngine
+            baiduKey = s.baiduOcrApiKey
+            baiduSecret = s.baiduOcrSecretKey
+            baiduEndpoint = s.baiduOcrEndpoint
+            baiduLanguage = s.baiduOcrLanguage
+            tencentId = s.tencentSecretId
+            tencentKey = s.tencentSecretKey
+            tencentEndpoint = s.tencentOcrEndpoint
+            tencentLanguage = s.tencentOcrLanguage
+            paddleMirror = s.paddleModelMirrorUrl
+            // 不阻塞主线程：file.exists() + file.length() 走 IO Dispatcher。先给占位
+            // 文字，IO 完成后再覆盖；进设置的瞬间不卡顿。
+            paddleStatus = paddleStatusPlaceholder
+            preUpscale = s.preprocess.upscale2x
+            preInvert = s.preprocess.invert
+            preBinarize = s.preprocess.binarize
+            a11yVolume = s.a11yVolumeTrigger
+            floatingSize = s.floatingButtonSizeDp.toFloat()
+            pinnedLanguages = s.pinnedLanguages
+            allowWrap = s.overlayAllowWrap
+            avoidCollision = s.overlayAvoidCollision
+            apiTimeoutSec = s.apiTimeoutSeconds.toFloat()
+            mergeAdjacent = s.mergeAdjacentBlocks
+            mergeStrength = s.mergeStrength
+            // 同一个 snapshot 内 capture 初始 Settings——既走 buildSnapshot() 单源路径，
+            // 又跟所有 state 在同一原子 apply 里，不会被中间帧看到。
+            initialSettings = buildSnapshot()
+        }
     }
 
     // paddleStatus 独立异步加载：file.exists() / file.length() 走 IO 线程，避免阻塞首帧。
@@ -482,7 +688,13 @@ fun SettingsScreen(
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = { scope.launch { doSave(); onBack() } },
+                onClick = {
+                    // 防护：load 完成前 state 是默认占位值，此时保存会把空字符串 / 默认 enum
+                    // 写入 DataStore，覆盖用户实际数据。LaunchedEffect 完成（~13ms）才把
+                    // initialSettings 设值，那之后才允许保存。
+                    if (initialSettings == null) return@ExtendedFloatingActionButton
+                    scope.launch { doSave(); onBack() }
+                },
                 icon = { Icon(Icons.Default.Save, contentDescription = null) },
                 text = { Text(stringResource(if (dirty) R.string.settings_save_btn else R.string.settings_saved_btn)) },
                 containerColor = MaterialTheme.colorScheme.primary,
@@ -491,17 +703,10 @@ fun SettingsScreen(
         }
     ) { inner ->
         Box(modifier = Modifier.fillMaxSize().padding(inner)) {
-            // 首帧只渲染 spinner，等 LaunchedEffect 把所有 state 填充完毕再 inflate Column。
-            // 这把 Column 的一次性 inflate 卡顿延后到 spinner 显示期间，用户主观感受顺滑。
-            if (initialSnapshot == null) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                }
-                return@Box
-            }
+            // 直接 inflate Column——不显示 spinner，避免"按下设置 → spinner → UI"那段空白卡顿感。
+            // state 默认值（空字符串 / 默认 enum）会先短暂显示，LaunchedEffect 在 ~13ms 内 Snapshot
+            // 原子更新所有 state 到实际保存值——肉眼几乎不察觉闪烁。代价：用户在 initialSettings
+            // 还是 null 时点保存按钮会用默认值覆盖数据，所以下面 FAB 加了 enabled 防护。
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -571,7 +776,12 @@ fun SettingsScreen(
                 LanguagePicker(
                     label = stringResource(R.string.settings_source_lang),
                     currentCode = sourceLang,
-                    onSelect = { sourceLang = it },
+                    onSelect = {
+                        timber.log.Timber.tag("OcrLangLink").i(
+                            "[user-select-source] %s -> %s", sourceLang, it
+                        )
+                        sourceLang = it
+                    },
                     pinned = pinnedLanguages,
                     onTogglePin = onTogglePin
                 )
@@ -582,70 +792,74 @@ fun SettingsScreen(
                     pinned = pinnedLanguages,
                     onTogglePin = onTogglePin
                 )
-                OutlinedTextField(
-                    value = prompt, onValueChange = { prompt = it },
-                    label = { Text(stringResource(R.string.settings_prompt_label)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 3, maxLines = 6
-                )
-
-                // Prompt 健康检查：缺占位符时显眼提示，可能时给一键修复按钮
-                // （把已硬编码的目标/源语言字样替换为 {target}/{source} 占位符）
-                val hasTargetPlaceholder = prompt.contains("{target}") || prompt.contains("{target_lang}")
-                val hasSourcePlaceholder = prompt.contains("{source}") || prompt.contains("{source_lang}")
-                val targetName = com.gameocr.app.data.Languages.nameOf(context, targetLang)
-                val sourceName = com.gameocr.app.data.Languages.nameOf(context, sourceLang)
-                val autoName = com.gameocr.app.data.Languages.nameOf(context, com.gameocr.app.data.Languages.AUTO.code)
-                val canFixTarget = !hasTargetPlaceholder && targetName.isNotBlank() &&
-                    prompt.contains(targetName)
-                val canFixSource = !hasSourcePlaceholder && sourceName.isNotBlank() &&
-                    sourceName != autoName && prompt.contains(sourceName)
-                if (!hasTargetPlaceholder || !hasSourcePlaceholder) {
-                    Card(
+                // Prompt / 流式开关只对 LLM 类（OpenAI 兼容）翻译引擎有意义；
+                // DeepL 是机器翻译 API，不读 prompt、也不走 SSE，隐藏避免误导。
+                if (translatorEngine == TranslatorEngine.OPENAI) {
+                    OutlinedTextField(
+                        value = prompt, onValueChange = { prompt = it },
+                        label = { Text(stringResource(R.string.settings_prompt_label)) },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
-                        ),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        minLines = 3, maxLines = 6
+                    )
+
+                    // Prompt 健康检查：缺占位符时显眼提示，可能时给一键修复按钮
+                    // （把已硬编码的目标/源语言字样替换为 {target}/{source} 占位符）
+                    val hasTargetPlaceholder = prompt.contains("{target}") || prompt.contains("{target_lang}")
+                    val hasSourcePlaceholder = prompt.contains("{source}") || prompt.contains("{source_lang}")
+                    val targetName = com.gameocr.app.data.Languages.nameOf(context, targetLang)
+                    val sourceName = com.gameocr.app.data.Languages.nameOf(context, sourceLang)
+                    val autoName = com.gameocr.app.data.Languages.nameOf(context, com.gameocr.app.data.Languages.AUTO.code)
+                    val canFixTarget = !hasTargetPlaceholder && targetName.isNotBlank() &&
+                        prompt.contains(targetName)
+                    val canFixSource = !hasSourcePlaceholder && sourceName.isNotBlank() &&
+                        sourceName != autoName && prompt.contains(sourceName)
+                    if (!hasTargetPlaceholder || !hasSourcePlaceholder) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
+                            ),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                         ) {
-                            val missingPart = buildString {
-                                if (!hasTargetPlaceholder) append("{target}")
-                                if (!hasTargetPlaceholder && !hasSourcePlaceholder) append(" / ")
-                                if (!hasSourcePlaceholder) append("{source}")
-                            }
-                            Text(
-                                stringResource(R.string.settings_prompt_warn_missing_format, missingPart),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                            Text(
-                                stringResource(R.string.settings_prompt_warn_hint_format, targetName),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            if (canFixTarget) {
-                                TextButton(onClick = {
-                                    prompt = prompt.replace(targetName, "{target}")
-                                }) { Text(stringResource(R.string.settings_prompt_replace_target_format, targetName)) }
-                            }
-                            if (canFixSource) {
-                                TextButton(onClick = {
-                                    prompt = prompt.replace(sourceName, "{source}")
-                                }) { Text(stringResource(R.string.settings_prompt_replace_source_format, sourceName)) }
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                val missingPart = buildString {
+                                    if (!hasTargetPlaceholder) append("{target}")
+                                    if (!hasTargetPlaceholder && !hasSourcePlaceholder) append(" / ")
+                                    if (!hasSourcePlaceholder) append("{source}")
+                                }
+                                Text(
+                                    stringResource(R.string.settings_prompt_warn_missing_format, missingPart),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                Text(
+                                    stringResource(R.string.settings_prompt_warn_hint_format, targetName),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (canFixTarget) {
+                                    TextButton(onClick = {
+                                        prompt = prompt.replace(targetName, "{target}")
+                                    }) { Text(stringResource(R.string.settings_prompt_replace_target_format, targetName)) }
+                                }
+                                if (canFixSource) {
+                                    TextButton(onClick = {
+                                        prompt = prompt.replace(sourceName, "{source}")
+                                    }) { Text(stringResource(R.string.settings_prompt_replace_source_format, sourceName)) }
+                                }
                             }
                         }
                     }
-                }
 
-                val defaultPrompt = stringResource(R.string.default_prompt)
-                TextButton(onClick = { prompt = defaultPrompt }) {
-                    Text(stringResource(R.string.settings_prompt_reset))
+                    val defaultPrompt = stringResource(R.string.default_prompt)
+                    TextButton(onClick = { prompt = defaultPrompt }) {
+                        Text(stringResource(R.string.settings_prompt_reset))
+                    }
+                    SwitchRow(stringResource(R.string.settings_streaming), streaming) { streaming = it }
                 }
-                SwitchRow(stringResource(R.string.settings_streaming), streaming) { streaming = it }
             }
 
             // —— OCR 引擎 ——
@@ -919,6 +1133,29 @@ fun SettingsScreen(
                     )
 
                     SwitchRow(stringResource(R.string.settings_merge_adjacent), mergeAdjacent) { mergeAdjacent = it }
+                    if (mergeAdjacent) {
+                        Text(
+                            stringResource(R.string.settings_merge_strength_label),
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            EngineChip(mergeStrength, com.gameocr.app.data.MergeStrength.CONSERVATIVE,
+                                stringResource(R.string.settings_merge_strength_conservative)) { mergeStrength = it }
+                            EngineChip(mergeStrength, com.gameocr.app.data.MergeStrength.STANDARD,
+                                stringResource(R.string.settings_merge_strength_standard)) { mergeStrength = it }
+                            EngineChip(mergeStrength, com.gameocr.app.data.MergeStrength.AGGRESSIVE,
+                                stringResource(R.string.settings_merge_strength_aggressive)) { mergeStrength = it }
+                        }
+                        Text(
+                            stringResource(when (mergeStrength) {
+                                com.gameocr.app.data.MergeStrength.CONSERVATIVE -> R.string.settings_merge_strength_conservative_hint
+                                com.gameocr.app.data.MergeStrength.STANDARD -> R.string.settings_merge_strength_standard_hint
+                                com.gameocr.app.data.MergeStrength.AGGRESSIVE -> R.string.settings_merge_strength_aggressive_hint
+                            }),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Text(
                         stringResource(R.string.settings_merge_adjacent_hint),
                         style = MaterialTheme.typography.bodySmall,
@@ -1411,11 +1648,26 @@ private fun ocrEngineLabelRes(engine: com.gameocr.app.data.OcrEngineKind): Int =
     com.gameocr.app.data.OcrEngineKind.PADDLE_ONNX -> R.string.settings_ocr_chip_paddle
 }
 
-/** OCR 联动提示用：源语言 + 推荐引擎配置。 */
-private data class OcrLangIssue(
-    val sourceCode: String,
-    val recommendation: com.gameocr.app.ocr.OcrLanguageCapability.Recommendation
-)
+/**
+ * OCR 联动提示用。两种方向：
+ *  - [FixOcr]：用户改源语言后当前 OCR 不支持，推荐改 OCR 端（旧行为）
+ *  - [FixSource]：用户改 OCR 端（引擎 / 端点 / 内部语种）后与当前源语言不匹配，
+ *                 推荐改源语言到匹配值——不是撤销用户操作
+ */
+private sealed class OcrLangIssue {
+    abstract val sourceCode: String
+
+    data class FixOcr(
+        override val sourceCode: String,
+        val recommendation: com.gameocr.app.ocr.OcrLanguageCapability.Recommendation
+    ) : OcrLangIssue()
+
+    data class FixSource(
+        override val sourceCode: String,
+        /** 建议把 sourceLang 改成这个 BCP-47 值，跟 OCR 端当前设置匹配。 */
+        val recommendedSourceCode: String
+    ) : OcrLangIssue()
+}
 
 @Composable
 private fun CustomThemeEditor(

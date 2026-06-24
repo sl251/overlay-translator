@@ -28,6 +28,7 @@ class FloatingButtonManager(
     private val wm by lazy { context.getSystemService(Context.WINDOW_SERVICE) as WindowManager }
     private var view: View? = null
     private var layoutParams: WindowManager.LayoutParams? = null
+    private var progressView: LoopProgressView? = null
 
     private val overlayType: Int = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -49,7 +50,19 @@ class FloatingButtonManager(
             setBackgroundResource(R.drawable.bg_floating_button)
             setPadding(8, 8, 8, 8)
         }
-        val container = FrameLayout(context).apply { addView(iv) }
+        // 循环模式进度环：叠加在 iv 上层全尺寸，stop 状态不绘任何东西
+        val progress = LoopProgressView(context)
+        val container = FrameLayout(context).apply {
+            addView(iv, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            ))
+            addView(progress, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            ))
+        }
+        progressView = progress
 
         // 用 currentWindowMetrics 拿当前实际屏幕尺寸（横屏 / 竖屏都对）
         val (screenW, screenH) = currentScreenSize()
@@ -105,11 +118,19 @@ class FloatingButtonManager(
     }
 
     fun hide() {
+        progressView?.stop()
+        progressView = null
         view?.let {
             runCatching { wm.removeView(it) }
             view = null
             layoutParams = null
         }
+    }
+
+    /** 循环模式开关：active=true 时 [LoopProgressView] 按 [intervalMs] 周期匀速转一圈；false 时停。 */
+    fun setLoopActive(active: Boolean, intervalMs: Long) {
+        val pv = progressView ?: return
+        if (active) pv.start(intervalMs) else pv.stop()
     }
 
     @SuppressLint("ClickableViewAccessibility")

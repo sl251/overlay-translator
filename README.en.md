@@ -2,7 +2,7 @@
 
 [简体中文](README.md) · **English**
 
-# GameOcr
+# PingYi
 
 **Real-time on-screen translator for Android · capture → OCR → translate → overlay**
 
@@ -27,25 +27,29 @@ No ROOT, fully self-contained, designed for visual novels, manga, game dialogue 
 ## ✨ Features
 
 - **Capture**: MediaProjection + ImageReader (foreground service with `mediaProjection` type, Android 14+ compatible); optional Shizuku path to skip the per-session permission dialog
-- **Trigger**: tap the floating button for one-shot, long-press to toggle loop mode (1 Hz by default, dHash diff skips static frames); optional accessibility service to bind volume keys as a global trigger
+- **Trigger**: tap the floating button for one-shot, long-press to toggle loop mode (every 2 s by default, dHash diff skips static frames, an outer ring on the floating ball visualises the countdown); optional accessibility service to bind **Vol+ and Vol- held together for 300 ms** as a global trigger
 - **Region selection**: full-screen rubber-band, remembers the last region, avoids OCR noise from the rest of the screen
 - **OCR engines** (router, swap in settings):
-  - ML Kit on-device (Latin / Japanese / Chinese / Korean, AUTO switches by kana hit)
+  - ML Kit on-device (Latin / Japanese / Chinese / Korean, AUTO switches by character set)
   - PaddleOCR PP-OCRv5 mobile (ONNX Runtime, multilingual on-device)
-  - Cloud fallback: Baidu OCR / Tencent OCR
+  - Cloud fallback: Baidu OCR / Tencent OCR (with position + per-language params)
+- **Source language ↔ OCR linkage**: when you change source language, the app checks whether the current OCR engine can recognize it; if not it recommends a better engine; if you're on cloud OCR with a generic language mode but a precise one is available, it offers an upgrade. The reverse also works: if you change the OCR side, it suggests adjusting source language to match — instead of undoing what you just did.
 - **Translation** (router):
   - OpenAI-compatible chat completions (DeepSeek / SiliconFlow / Zhipu / Ollama / OpenAI …) with SSE streaming
-  - DeepL (free / Pro auto-detected)
+  - DeepL (free / Pro auto-detected; Prompt and streaming settings auto-hide when DeepL is selected since they don't apply)
 - **Overlay**:
   - Two render modes: per OCR boundingBox (glued to source text) / single bottom banner
   - 5 built-in themes (Classic Dark / Amber Gold / Paper Light / Frost Glass / Custom) + font size, opacity, border, offset
   - Smart collision avoidance with neighbouring OCR boxes; wrap or compact single line
+  - **Merge adjacent OCR boxes** (essential for comics / subtitles): OCR engines often split one sentence into several adjacent boxes; merging them before translation eliminates overlay overlap. Three strengths — **Conservative / Standard / Aggressive** — for different layouts.
   - LRU translation cache, hits skip token cost
 - **Image preprocessing**: 2× upscale, color invert, Otsu binarize (for low-contrast / white-on-dark / colored noise)
 - **The app itself**:
   - English / 简体中文 UI + Light / Dark / Follow-system theme, both apply instantly
   - In-settings search (matches both Chinese and English keywords)
   - All API Key / Secret fields use password masking with show/hide toggle
+  - **Update check**: auto on app open (throttled 24 h) + manual button; calls GitHub Releases API directly, falls back to "Open release page" if the API is unreachable
+  - **Crash recorder**: uncaught exceptions + native crashes / ANR / OOM kill (Android 11+) are stored with device info + a redacted settings snapshot + the stacktrace, viewable / exportable from the log screen after restart
   - Vendor ROM compatibility shortcuts (auto-start / battery whitelist for Xiaomi / OPPO / VIVO / Huawei / Samsung)
 
 ## 📸 Screenshots
@@ -56,9 +60,9 @@ No ROOT, fully self-contained, designed for visual novels, manga, game dialogue 
 |---|---|
 | <img src="docs/screenshots/overlay-discord-dark.png" width="320" alt="Classic dark overlay" /> | <img src="docs/screenshots/overlay-discord-light.png" width="320" alt="Paper light overlay" /> |
 
-**In-game** — Sandship UI, Chinese detected and overlaid:
+**Comic / subtitle scene** — Korean manga in Firefox, vertical bubbles OCR'd and Chinese translation glued to each column:
 
-<img src="docs/screenshots/overlay-game.png" width="640" alt="In-game overlay" />
+<img src="docs/screenshots/overlay-game.png" width="360" alt="Manga overlay" />
 
 **Settings**:
 
@@ -79,11 +83,11 @@ Only `arm64-v8a` is published. Each APK ships with a `.sha256` so you can verify
 1. Open the app, tap **Start capture service**, accept the system "Start recording?" dialog
 2. Switch to any game / VN / manga app
 3. Tap the floating button → translation appears in ~2-3 s
-4. Long-press the floating button → toggle loop mode (1 Hz default, dHash skips still frames)
+4. Long-press the floating button → toggle loop mode (every 2 s default; the outer progress ring sweeps once per capture; dHash skips still frames)
 5. Tap the translation bar → hide
 
 Optional:
-- Enable the accessibility service to use volume keys as a global trigger (no need to tap the screen)
+- Enable the accessibility service so **holding Vol+ and Vol- together for 300 ms** acts as a global trigger (no screen-reading, no view-tree parsing)
 - Install [Shizuku](https://github.com/RikkaApps/Shizuku) and grant permission; in settings, switch the capture path to Shizuku to skip the per-session system dialog
 
 ## ⚙️ Configuration
@@ -133,7 +137,7 @@ You can override the mirror URL in settings, or import the files manually from l
 - **Render mode**: BLOCKS (per OCR box, glued to source) / BANNER (one bar at the bottom)
 - **Placement** (BLOCKS only): below / overlap / above + pixel-level x/y offset
 - **Theme**: 5 presets + custom (bg / fg / border ARGB)
-- **Avoidance & merge**: collision detection clamps translation width so it doesn't bleed into neighbour OCR boxes; optional paragraph merge bundles multi-line OCR boxes from the same bubble / subtitle into a single translation request
+- **Avoidance & merge**: collision detection clamps translation width so it doesn't bleed into neighbouring OCR boxes; OCR-side box merging offers **Conservative / Standard / Aggressive** strengths — Conservative suits VNs / dense passages, Standard fits most scenes, Aggressive suits comic bubbles split into many columns (may occasionally merge adjacent bubbles)
 
 ## ⚠️ Known limitations
 
@@ -142,14 +146,15 @@ You can override the mirror URL in settings, or import the files manually from l
 - Anti-cheat networked games may flag MediaProjection as a screen-recorder cheat — this project is for single-player / VN / manga only.
 - Screens marked `FLAG_SECURE` (some banking / video apps) capture as black; this project does not bypass it.
 - PaddleOCR on-device inference takes 1–3 s per shot on entry-level devices (Snapdragon 7-series or lower). Use region selection alongside.
-- Chinese ROMs (HyperOS / MIUI, etc.) silently drop background-Service toasts; OCR / network failures now show a red floating error bar (auto-dismisses in 4.5 s).
+- Chinese ROMs (HyperOS / MIUI, etc.) silently drop background-Service toasts; OCR / network failures, loop toggle, etc. now use floating overlays (red error bar auto-dismisses in 4.5 s, gray info bar in 1.8 s).
+- Auto-start permission is a vendor-specific concept and **Android has no public API to query it** — the button is always tappable and just opens the ROM's own auto-start list for you to flip the switch manually. Battery whitelist uses the standard system API and shows "Already enabled" once granted.
 
 ## 🗺️ Roadmap
 
 - **M0**: MediaProjection capture + ML Kit + PaddleOCR + OpenAI-compatible translation + floating button + bottom banner
-- **M1 (current)**: region persistence, SSE streaming, per-boundingBox overlay rendering, ROM guidance, i18n (zh / en) + Light / Dark theme, in-settings search
-- **M2**: Shizuku advanced path (global hotkey + no per-session dialog), cloud OCR fallback hardening, community translation workflow (Weblate, etc.)
-- **M3**: multi-translator comparison, chat history, TTS, glossaries
+- **M1**: region persistence, SSE streaming, per-boundingBox overlay rendering, ROM guidance, i18n (zh / en) + Light / Dark theme, in-settings search
+- **M2 (current)**: Korean ML Kit, dual-volume-key global trigger, source-language ↔ OCR linkage, three-strength adjacent box merging, loop progress ring, crash recorder + log screen, GitHub Releases update check, DeepL auto-hides LLM-only knobs
+- **M3**: Shizuku advanced path (UserService + aidl), multi-translator comparison, chat history, TTS, glossaries, Weblate community translation workflow
 
 ## 🤝 Contributing
 

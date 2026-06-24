@@ -185,22 +185,43 @@ class CaptureService : Service() {
             loopMode = false
             loopJob?.cancel()
             loopJob = null
+            mainScope.launch { floatingButton?.setLoopActive(false, 0L) }
             Timber.i("Loop mode OFF")
             logRepository.info(LogRepository.Category.CAPTURE, getString(R.string.log_msg_loop_off))
-            toast(getString(R.string.toast_loop_off))
+            // 国产 ROM 后台 Service toast 静默丢弃，用悬浮提示双保险
+            val msg = getString(R.string.toast_loop_off)
+            toast(msg)
+            mainScope.launch { overlay?.showInfoHint(msg) }
         } else {
             loopMode = true
             loopJob = scope.launch {
                 while (isActive && loopMode) {
                     captureOnce()
                     val s = settingsRepository.get()
-                    val interval = if (s.captureLoopIntervalMs <= 0) 1000L else s.captureLoopIntervalMs
+                    val interval = if (s.captureLoopIntervalMs <= 0) 2000L else s.captureLoopIntervalMs
                     delay(interval)
+                }
+            }
+            // 同步启动圆球外圈进度环 + 显示开启提示。interval 在循环 ON 时拿一次快照，
+            // 期间用户改 interval 想看到刷新需要重新切换循环。
+            scope.launch {
+                val s = settingsRepository.get()
+                val interval = if (s.captureLoopIntervalMs <= 0) 2000L else s.captureLoopIntervalMs
+                // 用户实际设的间隔渲染到 toast 文案里。整秒显示整数，否则带 1 位小数。
+                val secsStr = if (interval % 1000L == 0L) {
+                    (interval / 1000L).toString()
+                } else {
+                    String.format(java.util.Locale.US, "%.1f", interval / 1000.0)
+                }
+                val msg = getString(R.string.toast_loop_on, secsStr)
+                toast(msg)
+                mainScope.launch {
+                    floatingButton?.setLoopActive(true, interval)
+                    overlay?.showInfoHint(msg)
                 }
             }
             Timber.i("Loop mode ON")
             logRepository.info(LogRepository.Category.CAPTURE, getString(R.string.log_msg_loop_on))
-            toast(getString(R.string.toast_loop_on))
         }
     }
 
@@ -250,6 +271,12 @@ class CaptureService : Service() {
             val preprocessed = BitmapPreprocessor.apply(workBitmap, settings.preprocess)
             val rawBlocks = try {
                 ocrEngine.recognize(preprocessed, settings.ocrEngine)
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                // 协程取消（用户长按关循环 / Service 销毁）不是真错误，让它传播出去，
+                // 不要记为 OCR 失败也不要弹错误条。Bitmap 在 finally 里没法回收，这里手动清。
+                if (preprocessed !== workBitmap) preprocessed.recycle()
+                workBitmap.recycle()
+                throw ce
             } catch (t: Throwable) {
                 Timber.w(t, "OCR failed")
                 logRepository.error(

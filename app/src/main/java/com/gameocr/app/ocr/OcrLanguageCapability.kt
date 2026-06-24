@@ -158,6 +158,10 @@ object OcrLanguageCapability {
         }
         if (language.bcp47 == code) return true
         if (language == TencentOcrLanguage.AUTO || language == TencentOcrLanguage.MIX) {
+            // 腾讯 GeneralBasic + auto/mix 默认就识别中英文。TencentOcrLanguage 枚举里没有
+            // 显式的 EN/ZH 项（腾讯 API 没暴露独立 en 值），需要在这里特判，否则 supports("en")
+            // 会因 entries 里找不到 bcp47="en" 而误判 false。
+            if (code == "en" || code.startsWith("zh")) return true
             val match = TencentOcrLanguage.entries.firstOrNull { it.bcp47 == code }
             return match != null && match.supportedOn(endpoint)
         }
@@ -330,6 +334,89 @@ object OcrLanguageCapability {
         }
         // ML_KIT_LATIN / JAPANESE / KOREAN / CHINESE → 切到 ML_KIT_AUTO 是最优
         else -> Recommendation(OcrEngineKind.ML_KIT_AUTO)
+    }
+
+    /**
+     * supports=true 但还有"更精确"的云端 language 可用 → 返回升级建议；否则 null。
+     *
+     * 背景：百度 AUTO_DETECT / CHN_ENG、腾讯 AUTO / MIX 等通用模式**理论上**能识别小语种
+     * （supports 返回 true），但实测对韩 / 日 / 俄等的准确率明显低于精确指定 language。
+     * 既然枚举里有精确项（百度 KOR / JAP、腾讯 KO / JA 等），就主动建议用户切到精确项。
+     *
+     * 调用约束：
+     * - 端点不接受 language_type（百度 webimage）→ null（无 language 可调）
+     * - 当前 language 已精确匹配 BCP-47 → null（已经最优）
+     * - ML Kit / Paddle / 当前是非通用的具体 language → null
+     */
+    fun betterOcrLanguageFor(
+        sourceCode: String,
+        engine: OcrEngineKind,
+        baiduEndpoint: BaiduOcrEndpoint,
+        baiduLanguage: BaiduOcrLanguage,
+        tencentEndpoint: TencentOcrEndpoint,
+        tencentLanguage: TencentOcrLanguage
+    ): Recommendation? {
+        val code = normalize(sourceCode)
+        if (code.isEmpty() || code == "auto") return null
+        return when (engine) {
+            OcrEngineKind.BAIDU -> {
+                if (!baiduEndpoint.acceptsLanguageType) return null
+                if (baiduLanguage.bcp47 == code) return null
+                val isGeneric = baiduLanguage == BaiduOcrLanguage.AUTO_DETECT ||
+                    baiduLanguage == BaiduOcrLanguage.CHN_ENG
+                if (!isGeneric) return null
+                val match = BaiduOcrLanguage.entries.firstOrNull { it.bcp47 == code }
+                if (match != null && match.supportedOn(baiduEndpoint)) {
+                    Recommendation(
+                        engine = OcrEngineKind.BAIDU,
+                        baiduEndpoint = baiduEndpoint,
+                        baiduLanguage = match
+                    )
+                } else null
+            }
+            OcrEngineKind.TENCENT -> {
+                if (!tencentEndpoint.acceptsLanguageType) return null
+                if (tencentLanguage.bcp47 == code) return null
+                val isGeneric = tencentLanguage == TencentOcrLanguage.AUTO ||
+                    tencentLanguage == TencentOcrLanguage.MIX ||
+                    tencentLanguage == TencentOcrLanguage.ZH ||
+                    tencentLanguage == TencentOcrLanguage.ZH_RARE
+                if (!isGeneric) return null
+                val match = TencentOcrLanguage.entries.firstOrNull { it.bcp47 == code }
+                if (match != null && match.supportedOn(tencentEndpoint)) {
+                    Recommendation(
+                        engine = OcrEngineKind.TENCENT,
+                        tencentEndpoint = tencentEndpoint,
+                        tencentLanguage = match
+                    )
+                } else null
+            }
+            else -> null
+        }
+    }
+
+    /**
+     * 反向推断：给定当前 OCR 配置，它正"针对"哪个 BCP-47 源语言？
+     *
+     * 用于源语言↔OCR 联动的"反向推荐"：用户主动改了 OCR 端（引擎 / 端点 / 内部识别语种）
+     * 时，UI 应建议把源语言改成与该 OCR 配置匹配的值，而不是把用户刚改的 OCR 撤销。
+     *
+     * 多语种引擎（ML_KIT_AUTO / ML_KIT_LATIN / PADDLE_ONNX）和"自动 / 中英混合"等无单一对应
+     * BCP-47 的 language 返回 null，UI 据此跳过反向推荐。
+     */
+    fun inferSourceFor(
+        engine: OcrEngineKind,
+        baiduLanguage: BaiduOcrLanguage,
+        tencentLanguage: TencentOcrLanguage
+    ): String? = when (engine) {
+        OcrEngineKind.ML_KIT_JAPANESE -> "ja"
+        OcrEngineKind.ML_KIT_KOREAN -> "ko"
+        OcrEngineKind.ML_KIT_CHINESE -> "zh-CN"
+        OcrEngineKind.ML_KIT_AUTO,
+        OcrEngineKind.ML_KIT_LATIN,
+        OcrEngineKind.PADDLE_ONNX -> null
+        OcrEngineKind.BAIDU -> baiduLanguage.bcp47
+        OcrEngineKind.TENCENT -> tencentLanguage.bcp47
     }
 
     /** BCP-47 规范化：去 region tag（"ja-JP" → "ja"），保留 zh 的简繁差异。 */

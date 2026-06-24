@@ -73,6 +73,7 @@ class SettingsRepository @Inject constructor(
         val TencentLanguage = stringPreferencesKey("tencent_ocr_language")
         val ApiTimeoutSec = intPreferencesKey("api_timeout_seconds")
         val MergeAdjacent = booleanPreferencesKey("ocr_merge_adjacent")
+        val MergeStrengthKey = stringPreferencesKey("ocr_merge_strength")
     }
 
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
@@ -130,6 +131,7 @@ class SettingsRepository @Inject constructor(
             prefs[Keys.TencentLanguage] = next.tencentOcrLanguage.name
             prefs[Keys.ApiTimeoutSec] = next.apiTimeoutSeconds
             prefs[Keys.MergeAdjacent] = next.mergeAdjacentBlocks
+            prefs[Keys.MergeStrengthKey] = next.mergeStrength.name
         }
     }
 
@@ -207,7 +209,9 @@ class SettingsRepository @Inject constructor(
             tencentOcrLanguage = runCatching { TencentOcrLanguage.valueOf(this[Keys.TencentLanguage] ?: "") }
                 .getOrDefault(default.tencentOcrLanguage),
             apiTimeoutSeconds = this[Keys.ApiTimeoutSec] ?: default.apiTimeoutSeconds,
-            mergeAdjacentBlocks = this[Keys.MergeAdjacent] ?: default.mergeAdjacentBlocks
+            mergeAdjacentBlocks = this[Keys.MergeAdjacent] ?: default.mergeAdjacentBlocks,
+            mergeStrength = runCatching { MergeStrength.valueOf(this[Keys.MergeStrengthKey] ?: "") }
+                .getOrDefault(default.mergeStrength)
         )
     }
 }

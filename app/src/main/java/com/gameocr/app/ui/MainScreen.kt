@@ -98,6 +98,12 @@ fun MainScreen(
     var showClearRegionDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
 
+    // 主屏一进就触发自动检查更新。autoCheckIfDue 内部 24h 节流，频繁进出主屏不会浪费 API
+     // 额度；只有 hasUpdate 时才弹 dialog，已最新 / 失败 静默不打扰。
+    // hiltViewModel<UpdateViewModel>() 与 AboutContent 内部那个调用拿到同一实例，dialog 共享 state。
+    val updateVm: com.gameocr.app.update.UpdateViewModel = hiltViewModel()
+    LaunchedEffect(Unit) { updateVm.autoCheckIfDue() }
+
     // Shizuku 就绪时默认选 Shizuku（用户未手动切换过的前提下）。
     // 进入页面时 shizukuAvail 还在初始 NOT_INSTALLED，等 ON_RESUME 探测完才真实；
     // 这里跟着变化走，确保用户进来直接看到最优选项。
@@ -387,6 +393,9 @@ private const val GITHUB_URL = "https://github.com/ciddwd/overlay-translator"
 @Composable
 private fun AboutContent() {
     val context = LocalContext.current
+    val updateVm: com.gameocr.app.update.UpdateViewModel = hiltViewModel()
+    val updateState by updateVm.state.collectAsState()
+
     Text(
         text = stringResource(R.string.settings_about_tagline),
         style = MaterialTheme.typography.bodySmall,
@@ -416,6 +425,111 @@ private fun AboutContent() {
         },
         modifier = Modifier.fillMaxWidth()
     ) { Text(stringResource(R.string.settings_about_open_github)) }
+
+    // 检查更新：调 GitHub Releases API，失败让用户手动打开 Release 页（国内访问 api.github.com 偶尔抽风）
+    OutlinedButton(
+        enabled = updateState !is com.gameocr.app.update.UpdateViewModel.State.Checking,
+        onClick = { updateVm.check() },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            stringResource(
+                if (updateState is com.gameocr.app.update.UpdateViewModel.State.Checking)
+                    R.string.update_btn_checking
+                else R.string.update_btn_check
+            )
+        )
+    }
+
+    UpdateResultDialog(
+        state = updateState,
+        onDismiss = { updateVm.reset() },
+        onOpenRelease = { url ->
+            runCatching {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+            }
+            updateVm.reset()
+        }
+    )
+}
+
+@Composable
+private fun UpdateResultDialog(
+    state: com.gameocr.app.update.UpdateViewModel.State,
+    onDismiss: () -> Unit,
+    onOpenRelease: (String) -> Unit
+) {
+    when (state) {
+        is com.gameocr.app.update.UpdateViewModel.State.Loaded -> {
+            val info = state.info
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                title = {
+                    Text(stringResource(
+                        if (info.hasUpdate) R.string.update_dialog_title_new
+                        else R.string.update_dialog_title_uptodate
+                    ))
+                },
+                text = {
+                    Column {
+                        Text(stringResource(
+                            R.string.update_dialog_versions_format,
+                            info.currentVersion, info.latestVersion
+                        ))
+                        if (info.hasUpdate && !info.changelog.isNullOrBlank()) {
+                            Text(
+                                text = info.changelog,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    if (info.hasUpdate) {
+                        TextButton(onClick = {
+                            // 有 APK 直链就走直链让浏览器 / 系统下载器直接下；否则跳 release 页
+                            onOpenRelease(info.apkUrl ?: info.releaseUrl)
+                        }) { Text(stringResource(R.string.update_dialog_btn_download)) }
+                    } else {
+                        TextButton(onClick = onDismiss) {
+                            Text(stringResource(R.string.update_dialog_btn_ok))
+                        }
+                    }
+                },
+                dismissButton = if (info.hasUpdate) {
+                    {
+                        TextButton(onClick = onDismiss) {
+                            Text(stringResource(R.string.update_dialog_btn_later))
+                        }
+                    }
+                } else null
+            )
+        }
+        is com.gameocr.app.update.UpdateViewModel.State.Failed -> {
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                title = { Text(stringResource(R.string.update_dialog_title_failed)) },
+                text = {
+                    Text(stringResource(R.string.update_dialog_failed_format, state.errorMessage))
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        onOpenRelease(com.gameocr.app.update.UpdateChecker.RELEASE_PAGE_URL)
+                    }) { Text(stringResource(R.string.update_dialog_btn_open_release)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = onDismiss) {
+                        Text(stringResource(R.string.update_dialog_btn_close))
+                    }
+                }
+            )
+        }
+        else -> Unit
+    }
 }
 
 @Composable

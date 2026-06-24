@@ -162,6 +162,60 @@ class OverlayManager(
         errorView = null
     }
 
+    /**
+     * 中性悬浮提示，跟 [showErrorHint] 同链路但深灰底色，用于循环开 / 关等非错误反馈。
+     * 国产 ROM 对后台 Service 的 [android.widget.Toast.makeText] 会静默丢弃，这里用悬浮窗替代。
+     */
+    fun showInfoHint(message: String, durationMs: Long = 1800L) {
+        runCatching { errorView?.let { wm.removeView(it) } }
+        errorView = null
+
+        val density = context.resources.displayMetrics.density
+        val padH = (16 * density).toInt()
+        val padV = (10 * density).toInt()
+        val maxW = (context.resources.displayMetrics.widthPixels * 0.92f).toInt()
+
+        val tv = TextView(context).apply {
+            text = message
+            setTextColor(0xFFFFFFFF.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            maxWidth = maxW
+        }
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = GradientDrawable().apply {
+                cornerRadius = 12f
+                setColor(0xE6303030.toInt()) // 深灰半透明（区别于 error 的红色）
+            }
+            setPadding(padH, padV, padH, padV)
+            addView(tv)
+        }
+
+        val params = newLayoutParams().apply {
+            width = WindowManager.LayoutParams.WRAP_CONTENT
+            height = WindowManager.LayoutParams.WRAP_CONTENT
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            y = (96 * density).toInt()
+        }
+        runCatching { wm.addView(container, params) }
+        errorView = container
+
+        container.setOnClickListener {
+            if (errorView === container) {
+                runCatching { wm.removeView(container) }
+                errorView = null
+            }
+        }
+        container.postDelayed({
+            if (errorView === container) {
+                runCatching { wm.removeView(container) }
+                errorView = null
+            }
+        }, durationMs)
+    }
+
     fun showFullScreen(pairs: List<Pair<String, String>>) {
         clearLoading()
         clear()

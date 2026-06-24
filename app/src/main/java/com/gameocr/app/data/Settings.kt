@@ -16,7 +16,7 @@ data class Settings(
     val targetLang: String = "zh-CN",
     val promptTemplate: String = DEFAULT_PROMPT,
     val ocrEngine: OcrEngineKind = OcrEngineKind.ML_KIT_AUTO,
-    val captureLoopIntervalMs: Long = 1000L,
+    val captureLoopIntervalMs: Long = 2000L,
     val captureRegion: CaptureRegion? = null,
     val overlayTextSizeSp: Int = 14,
     val overlayAlpha: Float = 0.85f,
@@ -76,9 +76,13 @@ data class Settings(
     /**
      * OCR 后合并相邻 box：把同一行内左右邻接的小 box 合并成一个，文本用空格拼接，
      * box 取 union。漫画 / 字幕场景百度等引擎经常把一句话拆成多段，开启后能让译文
-     * 不再分裂成多个互相重叠的小框。默认开。
+     * 不再分裂成多个互相重叠的小框。默认关，按需在设置里开启。
+     *
+     * 阈值由 [mergeStrength] 选择：保守 / 标准 / 激进。
      */
     val mergeAdjacentBlocks: Boolean = false,
+    /** 合并相邻 box 的强度档位，仅在 [mergeAdjacentBlocks] = true 时生效。 */
+    val mergeStrength: MergeStrength = MergeStrength.STANDARD,
     /**
      * 用户在 LanguagePicker 里星标过的语言代码，按收藏顺序保存。
      * 列表里在最前，源语言 / 目标语言两个选择器共享同一份。
@@ -101,6 +105,20 @@ data class Settings(
 原文：
 """
     }
+}
+
+/**
+ * OCR 合并相邻 box 的强度档位。从保守到激进——保守宁可让 OCR 输出散一些不误合，
+ * 激进容忍更大间距 / 行高差，适合漫画气泡内多行被切碎的情形。
+ */
+@Serializable
+enum class MergeStrength {
+    /** 漫画 / 字幕短句：宽松阈值（gap 1.8x、垂直 1.3x、相交 15%），最容易合，可能误合相邻气泡。 */
+    AGGRESSIVE,
+    /** 默认：当前调优好的中间值（gap 1.2x、垂直 0.8x、相交 30%）。 */
+    STANDARD,
+    /** 视觉小说 / 长段密集场景：严格阈值（gap 0.8x、垂直 0.5x、相交 50%），少误合但段落易拆开。 */
+    CONSERVATIVE
 }
 
 @Serializable

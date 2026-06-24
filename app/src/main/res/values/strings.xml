@@ -177,7 +177,7 @@
     <string name="settings_ocr_chip_japanese">日文</string>
     <string name="settings_ocr_chip_korean">韩文</string>
     <string name="settings_ocr_chip_chinese">中文</string>
-    <string name="settings_ocr_chip_latin">拉丁</string>
+    <string name="settings_ocr_chip_latin">拉丁字母</string>
     <string name="settings_ocr_chip_baidu">百度云</string>
     <string name="settings_ocr_chip_tencent">腾讯云</string>
     <string name="settings_ocr_chip_paddle">PaddleOCR</string>
@@ -227,6 +227,13 @@
     <string name="settings_avoid_collision_hint">碰撞检测开启时：译文不挤进右侧相邻原文 box；换行后高度受下方相邻原文 box 约束，最多行数自动收缩。</string>
     <string name="settings_merge_adjacent">合并同行邻接 box（避免拆段重叠）</string>
     <string name="settings_merge_adjacent_hint">漫画 / 字幕场景 OCR 经常把一句话拆成几个相邻小 box（\"WHEN SHE | SOBERS UP. | THANK\"），导致译文层互相重叠。开启后会先把这些合并成一个大 box 再翻译，从源头减少重叠。</string>
+    <string name="settings_merge_strength_label">合并强度</string>
+    <string name="settings_merge_strength_conservative">保守</string>
+    <string name="settings_merge_strength_standard">标准</string>
+    <string name="settings_merge_strength_aggressive">激进</string>
+    <string name="settings_merge_strength_conservative_hint">严格阈值，少误合但段落容易拆开。适合视觉小说 / 长段密集场景。</string>
+    <string name="settings_merge_strength_standard_hint">默认平衡阈值，适合大多数场景。</string>
+    <string name="settings_merge_strength_aggressive_hint">宽松阈值，更容易合并多行气泡。漫画 / 短句场景推荐；可能误合相邻气泡。</string>
     <string name="settings_floating_size_format">悬浮按钮大小: %1$d dp</string>
     <string name="settings_loop_interval_label">自动循环间隔 (毫秒)</string>
     <string name="settings_a11y_volume_label">音量键触发（需启用无障碍服务）</string>
@@ -322,7 +329,7 @@
 
     <!-- CaptureService toast -->
     <string name="toast_loop_off">自动翻译已关闭</string>
-    <string name="toast_loop_on">自动翻译已开启（每 1 秒一次，再次长按关闭）</string>
+    <string name="toast_loop_on">自动翻译已开启（每 %1$s 秒一次，再次长按关闭）</string>
     <string name="toast_capture_failed">截屏失败：未拿到画面，建议重新启动捕获</string>
     <string name="toast_ocr_failed_format">OCR 失败 [%1$s]：%2$s</string>
 
@@ -384,11 +391,27 @@
 
     <!-- 源语言切换时联动 OCR：当前引擎不支持新源语言时弹出 -->
     <string name="ocr_lang_issue_title">OCR 引擎可能识别不准</string>
-    <string name="ocr_lang_issue_msg">你刚把源语言切到 \"%1$s\"，但当前 OCR 引擎可能识别不准。\n建议切换到「%2$s」。</string>
+    <string name="ocr_lang_issue_msg">源语言为 \"%1$s\"，当前 OCR 引擎可能识别不准。\n建议切换到「%2$s」。</string>
+    <string name="ocr_lang_issue_msg_tune">源语言为 \"%1$s\"，当前的「%2$s」识别语种是「%3$s」，可能识别不准。\n建议改为「%4$s」，点\"应用\"自动调整（不会换引擎）。</string>
+    <string name="ocr_lang_issue_msg_source_tune">「%1$s」识别语种是「%2$s」，但源语言为 \"%3$s\"。\n建议把源语言改为「%4$s」匹配。点\"应用\"自动调整。</string>
     <string name="ocr_lang_issue_msg_keys_missing">识别 \"%1$s\" 推荐用「%2$s」（云端 OCR）。还没填对应 API Key，去 OCR 设置里填一下。</string>
-    <string name="ocr_lang_issue_btn_apply">切换</string>
+    <string name="ocr_lang_issue_btn_apply">应用</string>
     <string name="ocr_lang_issue_btn_setup">去设置</string>
     <string name="ocr_lang_issue_btn_keep">保持不变</string>
+
+    <!-- 检查更新（GitHub Releases API） -->
+    <string name="update_btn_check">检查更新</string>
+    <string name="update_btn_checking">检查中…</string>
+    <string name="update_dialog_title_new">发现新版本</string>
+    <string name="update_dialog_title_uptodate">已是最新版本</string>
+    <string name="update_dialog_title_failed">检查失败</string>
+    <string name="update_dialog_versions_format">当前 %1$s → 最新 %2$s</string>
+    <string name="update_dialog_failed_format">%1$s\n\n国内访问 api.github.com 可能不稳定，可以点下方按钮手动打开 Release 页。</string>
+    <string name="update_dialog_btn_download">下载</string>
+    <string name="update_dialog_btn_later">稍后</string>
+    <string name="update_dialog_btn_ok">好的</string>
+    <string name="update_dialog_btn_close">关闭</string>
+    <string name="update_dialog_btn_open_release">打开 Release 页</string>
 
     <!-- 腾讯 OCR endpoint 显示名 / desc -->
     <string name="tencent_endpoint_general_basic_name">通用印刷体</string>
