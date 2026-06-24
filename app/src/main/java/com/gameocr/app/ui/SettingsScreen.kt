@@ -135,9 +135,11 @@ fun SettingsScreen(
     var baiduKey by remember { mutableStateOf("") }
     var baiduSecret by remember { mutableStateOf("") }
     var baiduEndpoint by remember { mutableStateOf(com.gameocr.app.data.BaiduOcrEndpoint.GENERAL) }
+    var baiduLanguage by remember { mutableStateOf(com.gameocr.app.data.BaiduOcrLanguage.CHN_ENG) }
     var tencentId by remember { mutableStateOf("") }
     var tencentKey by remember { mutableStateOf("") }
     var tencentEndpoint by remember { mutableStateOf(com.gameocr.app.data.TencentOcrEndpoint.GENERAL_BASIC) }
+    var tencentLanguage by remember { mutableStateOf(com.gameocr.app.data.TencentOcrLanguage.AUTO) }
     var paddleMirror by remember { mutableStateOf("") }
     var paddleStatus by remember { mutableStateOf("") }
     var paddleDownloading by remember { mutableStateOf(false) }
@@ -176,7 +178,8 @@ fun SettingsScreen(
                 textSize, alpha, loopInterval, streaming, renderMode, placement, overlayTheme,
                 customBg, customFg, customBorder, customBorderW,
                 offsetX, offsetY, ocrEngine,
-                baiduKey, baiduSecret, baiduEndpoint, tencentId, tencentKey, tencentEndpoint, paddleMirror,
+                baiduKey, baiduSecret, baiduEndpoint, baiduLanguage,
+                tencentId, tencentKey, tencentEndpoint, tencentLanguage, paddleMirror,
                 preUpscale, preInvert, preBinarize, a11yVolume, floatingSize,
                 allowWrap, avoidCollision, apiTimeoutSec, mergeAdjacent
             )
@@ -199,7 +202,9 @@ fun SettingsScreen(
             offsetX = offsetX.toInt(), offsetY = offsetY.toInt(),
             ocrEngine = ocrEngine,
             baiduKey = baiduKey, baiduSecret = baiduSecret, baiduEndpoint = baiduEndpoint,
+            baiduLanguage = baiduLanguage,
             tencentId = tencentId, tencentKey = tencentKey, tencentEndpoint = tencentEndpoint,
+            tencentLanguage = tencentLanguage,
             preprocess = PreprocessOptions(preUpscale, preInvert, preBinarize),
             a11yVolume = a11yVolume,
             floatingButtonSizeDp = floatingSize.toInt(),
@@ -245,6 +250,111 @@ fun SettingsScreen(
         )
     }
 
+    // 源语言切换联动 OCR：检查当前引擎能不能识别该源语言，不能就弹推荐切换
+    var ocrLangIssue by remember { mutableStateOf<OcrLangIssue?>(null) }
+    var langCheckPrimed by remember { mutableStateOf(false) }
+    var lastCheckedLang by remember { mutableStateOf<String?>(null) }
+    // dismissedFor 只在"本次会话内同一语言已被用户点过保持不变"时生效；用户切到别的语言再切回
+    // 来就重新检查。注意这跟"sourceLang 已经是 dismissedFor 的值但 LaunchedEffect 因 OCR
+    // 端点变化而重跑"区分开来：那种情况里 lastCheckedLang == sourceLang，不当作新切语言。
+    var langDismissedFor by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(
+        sourceLang, ocrEngine,
+        baiduEndpoint, baiduLanguage,
+        tencentEndpoint, tencentLanguage
+    ) {
+        // 首次跑（load 完成那一瞬间）跳过；只在用户真正改 state 时触发
+        if (!langCheckPrimed) {
+            langCheckPrimed = true
+            lastCheckedLang = sourceLang
+            return@LaunchedEffect
+        }
+        // 源语言换成了别的值：清掉上次 dismissed，相当于"用户对新语言态度待定，需要重新提示"
+        if (sourceLang != lastCheckedLang) {
+            langDismissedFor = null
+            lastCheckedLang = sourceLang
+        }
+        if (sourceLang.isBlank()) {
+            ocrLangIssue = null
+            return@LaunchedEffect
+        }
+        if (sourceLang == langDismissedFor) return@LaunchedEffect
+        val supported = com.gameocr.app.ocr.OcrLanguageCapability.supports(
+            engine = ocrEngine,
+            sourceCode = sourceLang,
+            baiduEndpoint = baiduEndpoint,
+            tencentEndpoint = tencentEndpoint,
+            baiduLanguage = baiduLanguage,
+            tencentLanguage = tencentLanguage
+        )
+        if (supported) {
+            ocrLangIssue = null
+            return@LaunchedEffect
+        }
+        val rec = com.gameocr.app.ocr.OcrLanguageCapability.recommendFor(
+            sourceCode = sourceLang,
+            currentEngine = ocrEngine,
+            currentBaiduEndpoint = baiduEndpoint,
+            currentTencentEndpoint = tencentEndpoint,
+            hasBaiduKey = baiduKey.isNotBlank() && baiduSecret.isNotBlank(),
+            hasTencentKey = tencentId.isNotBlank() && tencentKey.isNotBlank()
+        )
+        ocrLangIssue = rec?.let { OcrLangIssue(sourceLang, it) }
+    }
+    ocrLangIssue?.let { issue ->
+        val sourceName = com.gameocr.app.data.Languages.nameOf(context, issue.sourceCode)
+        val rec = issue.recommendation
+        val recEngineLabel = stringResource(ocrEngineLabelRes(rec.engine))
+        AlertDialog(
+            onDismissRequest = {
+                langDismissedFor = issue.sourceCode
+                ocrLangIssue = null
+            },
+            title = { Text(stringResource(R.string.ocr_lang_issue_title)) },
+            text = {
+                Text(
+                    if (rec.keysMissing) stringResource(
+                        R.string.ocr_lang_issue_msg_keys_missing, sourceName, recEngineLabel
+                    ) else stringResource(
+                        R.string.ocr_lang_issue_msg, sourceName, recEngineLabel
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (rec.keysMissing) {
+                        // 切到推荐引擎让用户能看到对应 key 输入框，然后滚到 OCR section
+                        ocrEngine = rec.engine
+                        rec.baiduEndpoint?.let { baiduEndpoint = it }
+                        rec.tencentEndpoint?.let { tencentEndpoint = it }
+                        scope.launch {
+                            anchors[SectionKeys.OCR]?.let { y -> scrollState.animateScrollTo(y) }
+                        }
+                    } else {
+                        // 直接应用推荐配置
+                        ocrEngine = rec.engine
+                        rec.baiduEndpoint?.let { baiduEndpoint = it }
+                        rec.baiduLanguage?.let { baiduLanguage = it }
+                        rec.tencentEndpoint?.let { tencentEndpoint = it }
+                        rec.tencentLanguage?.let { tencentLanguage = it }
+                    }
+                    ocrLangIssue = null
+                }) {
+                    Text(stringResource(
+                        if (rec.keysMissing) R.string.ocr_lang_issue_btn_setup
+                        else R.string.ocr_lang_issue_btn_apply
+                    ))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    langDismissedFor = issue.sourceCode
+                    ocrLangIssue = null
+                }) { Text(stringResource(R.string.ocr_lang_issue_btn_keep)) }
+            }
+        )
+    }
+
     LaunchedEffect(Unit) {
         val s = viewModel.load()
         baseUrl = s.baseUrl
@@ -275,9 +385,11 @@ fun SettingsScreen(
         baiduKey = s.baiduOcrApiKey
         baiduSecret = s.baiduOcrSecretKey
         baiduEndpoint = s.baiduOcrEndpoint
+        baiduLanguage = s.baiduOcrLanguage
         tencentId = s.tencentSecretId
         tencentKey = s.tencentSecretKey
         tencentEndpoint = s.tencentOcrEndpoint
+        tencentLanguage = s.tencentOcrLanguage
         paddleMirror = s.paddleModelMirrorUrl
         // 不阻塞主线程：file.exists() + file.length() 走 IO Dispatcher。先给占位
         // 文字，IO 完成后再覆盖；进设置的瞬间不卡顿。
@@ -544,6 +656,7 @@ fun SettingsScreen(
                 ) {
                     EngineChip(ocrEngine, OcrEngineKind.ML_KIT_AUTO, stringResource(R.string.settings_ocr_chip_auto)) { ocrEngine = it }
                     EngineChip(ocrEngine, OcrEngineKind.ML_KIT_JAPANESE, stringResource(R.string.settings_ocr_chip_japanese)) { ocrEngine = it }
+                    EngineChip(ocrEngine, OcrEngineKind.ML_KIT_KOREAN, stringResource(R.string.settings_ocr_chip_korean)) { ocrEngine = it }
                     EngineChip(ocrEngine, OcrEngineKind.ML_KIT_CHINESE, stringResource(R.string.settings_ocr_chip_chinese)) { ocrEngine = it }
                 }
                 Row(
@@ -587,6 +700,29 @@ fun SettingsScreen(
                         EngineChip(baiduEndpoint, com.gameocr.app.data.BaiduOcrEndpoint.ACCURATE_BASIC, stringResource(R.string.settings_baidu_endpoint_accurate)) { baiduEndpoint = it }
                         EngineChip(baiduEndpoint, com.gameocr.app.data.BaiduOcrEndpoint.ACCURATE, stringResource(R.string.settings_baidu_endpoint_accurate_loc)) { baiduEndpoint = it }
                     }
+                    // 除 webimage 外四个端点都支持 language_type：
+                    //  - 标准系（general_basic / general）只支持 10 种主流
+                    //  - 高精度系（accurate_basic / accurate）支持全 25 种
+                    val baiduAcceptsLang = baiduEndpoint != com.gameocr.app.data.BaiduOcrEndpoint.WEBIMAGE
+                    if (baiduAcceptsLang) {
+                        EnumLanguagePicker(
+                            label = stringResource(R.string.settings_baidu_lang_label),
+                            current = baiduLanguage,
+                            options = com.gameocr.app.data.BaiduOcrLanguage.entries
+                                .filter { it.supportedOn(baiduEndpoint) },
+                            labelResOf = { it.displayNameRes },
+                            bcp47Of = { it.bcp47 },
+                            pinnedBcp47 = pinnedLanguages,
+                            onTogglePin = { code -> scope.launch { viewModel.togglePinLanguage(code) } },
+                            onSelect = { baiduLanguage = it }
+                        )
+                    } else {
+                        Text(
+                            stringResource(R.string.settings_baidu_lang_loc_warning),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                     Text(
                         stringResource(
                             R.string.settings_baidu_current_format,
@@ -623,6 +759,25 @@ fun SettingsScreen(
                         EngineChip(tencentEndpoint, com.gameocr.app.data.TencentOcrEndpoint.GENERAL_BASIC, stringResource(R.string.settings_tencent_endpoint_general_basic)) { tencentEndpoint = it }
                         EngineChip(tencentEndpoint, com.gameocr.app.data.TencentOcrEndpoint.GENERAL_ACCURATE, stringResource(R.string.settings_tencent_endpoint_general_accurate)) { tencentEndpoint = it }
                         EngineChip(tencentEndpoint, com.gameocr.app.data.TencentOcrEndpoint.RECOGNIZE_AGENT, stringResource(R.string.settings_tencent_endpoint_recognize_agent)) { tencentEndpoint = it }
+                    }
+                    // 只有 GeneralBasicOCR 真正接受 LanguageType；其它端点不显示选择器并给提示
+                    if (tencentEndpoint == com.gameocr.app.data.TencentOcrEndpoint.GENERAL_BASIC) {
+                        EnumLanguagePicker(
+                            label = stringResource(R.string.settings_tencent_lang_label),
+                            current = tencentLanguage,
+                            options = com.gameocr.app.data.TencentOcrLanguage.entries,
+                            labelResOf = { it.displayNameRes },
+                            bcp47Of = { it.bcp47 },
+                            pinnedBcp47 = pinnedLanguages,
+                            onTogglePin = { code -> scope.launch { viewModel.togglePinLanguage(code) } },
+                            onSelect = { tencentLanguage = it }
+                        )
+                    } else if (tencentEndpoint == com.gameocr.app.data.TencentOcrEndpoint.GENERAL_ACCURATE) {
+                        Text(
+                            stringResource(R.string.settings_tencent_lang_accurate_warning),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
                     }
                     Text(
                         stringResource(
@@ -789,6 +944,11 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(), singleLine = true
                 )
                 SwitchRow(stringResource(R.string.settings_a11y_volume_label), a11yVolume) { a11yVolume = it }
+                Text(
+                    stringResource(R.string.settings_a11y_volume_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 OutlinedButton(
                     onClick = { context.startActivity(Intent(AndroidSettings.ACTION_ACCESSIBILITY_SETTINGS)) },
                     modifier = Modifier.fillMaxWidth()
@@ -1237,6 +1397,25 @@ private fun <T> EngineChip(current: T, target: T, label: String, onSelect: (T) -
         label = { Text(label) }
     )
 }
+
+/** OCR 引擎 → 用户可读 chip 标签资源 id（联动提示 dialog 复用）。 */
+@androidx.annotation.StringRes
+private fun ocrEngineLabelRes(engine: com.gameocr.app.data.OcrEngineKind): Int = when (engine) {
+    com.gameocr.app.data.OcrEngineKind.ML_KIT_AUTO -> R.string.settings_ocr_chip_auto
+    com.gameocr.app.data.OcrEngineKind.ML_KIT_LATIN -> R.string.settings_ocr_chip_latin
+    com.gameocr.app.data.OcrEngineKind.ML_KIT_JAPANESE -> R.string.settings_ocr_chip_japanese
+    com.gameocr.app.data.OcrEngineKind.ML_KIT_KOREAN -> R.string.settings_ocr_chip_korean
+    com.gameocr.app.data.OcrEngineKind.ML_KIT_CHINESE -> R.string.settings_ocr_chip_chinese
+    com.gameocr.app.data.OcrEngineKind.BAIDU -> R.string.settings_ocr_chip_baidu
+    com.gameocr.app.data.OcrEngineKind.TENCENT -> R.string.settings_ocr_chip_tencent
+    com.gameocr.app.data.OcrEngineKind.PADDLE_ONNX -> R.string.settings_ocr_chip_paddle
+}
+
+/** OCR 联动提示用：源语言 + 推荐引擎配置。 */
+private data class OcrLangIssue(
+    val sourceCode: String,
+    val recommendation: com.gameocr.app.ocr.OcrLanguageCapability.Recommendation
+)
 
 @Composable
 private fun CustomThemeEditor(

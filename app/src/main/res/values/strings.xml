@@ -41,6 +41,10 @@
     <string name="main_btn_open_battery_whitelist">打开电池白名单设置</string>
     <string name="main_btn_pick_region">框选区域</string>
     <string name="main_btn_clear_region">清除区域，恢复整屏</string>
+    <string name="main_clear_region_dialog_title">清除截屏区域？</string>
+    <string name="main_clear_region_dialog_msg">下次识别会改用整屏画面。当前框选位置会被丢弃，可以随时重新框选。</string>
+    <string name="main_clear_region_dialog_confirm">清除</string>
+    <string name="main_clear_region_dialog_cancel">取消</string>
     <string name="main_label_start_mode">启动方式</string>
     <string name="main_label_usage">使用说明</string>
     <string name="main_usage_text">悬浮圆球：单击 = 触发一次翻译；长按 = 切换自动循环模式；拖动 = 移动位置</string>
@@ -171,12 +175,13 @@
     <string name="settings_prompt_reset">恢复默认 prompt（含占位符）</string>
     <string name="settings_ocr_chip_auto">自动</string>
     <string name="settings_ocr_chip_japanese">日文</string>
+    <string name="settings_ocr_chip_korean">韩文</string>
     <string name="settings_ocr_chip_chinese">中文</string>
     <string name="settings_ocr_chip_latin">拉丁</string>
     <string name="settings_ocr_chip_baidu">百度云</string>
     <string name="settings_ocr_chip_tencent">腾讯云</string>
     <string name="settings_ocr_chip_paddle">PaddleOCR</string>
-    <string name="settings_ocr_intro">选择 OCR 引擎，决定识别哪种文字：\n• 自动 / 日文 / 中文 / 拉丁：Google ML Kit 端侧（免费、离线）。\"自动\"按假名命中切换三个模型；如果你确定原文是某种语言，固定选对应项能略提精度\n• PaddleOCR：端侧多语种识别，复杂排版更稳，首次使用要下载 ~20MB 模型\n• 百度云 / 腾讯云：云端 OCR，需 API Key 按量计费，作为漏检兜底</string>
+    <string name="settings_ocr_intro">选择 OCR 引擎，决定识别哪种文字：\n• 自动 / 日文 / 韩文 / 中文 / 拉丁：Google ML Kit 端侧（免费、离线）。\"自动\"按谚文 / 假名命中切换识别器；如果你确定原文是某种语言，固定选对应项能略提精度\n• PaddleOCR：端侧多语种识别，复杂排版更稳，首次使用要下载 ~20MB 模型（暂不含韩文字典，韩文请用 ML Kit 或云端）\n• 百度云 / 腾讯云：云端 OCR，需 API Key 按量计费；展开后可在「识别语种」里切到韩 / 日等小语种作为漏检兜底</string>
     <string name="settings_baidu_api_key">百度 API Key</string>
     <string name="settings_baidu_secret_key">百度 Secret Key</string>
     <string name="settings_baidu_endpoint_label">接口类型（每个 endpoint 在百度控制台有独立的免费配额）</string>
@@ -225,6 +230,7 @@
     <string name="settings_floating_size_format">悬浮按钮大小: %1$d dp</string>
     <string name="settings_loop_interval_label">自动循环间隔 (毫秒)</string>
     <string name="settings_a11y_volume_label">音量键触发（需启用无障碍服务）</string>
+    <string name="settings_a11y_volume_hint">同时按住 音量+ 和 音量- 0.3 秒触发一次识别。单键不拦截，正常调音量。</string>
     <string name="settings_btn_open_a11y">打开系统无障碍设置</string>
     <string name="settings_api_timeout_format">API 请求超时: %1$d 秒</string>
     <string name="settings_api_timeout_hint">作用于所有云端 API：百度 / 腾讯 OCR、OpenAI 兼容翻译、DeepL。流式翻译自动用 2 倍上限。\nPaddleOCR 端侧模型下载不受此限制（用默认 60s）。</string>
@@ -338,6 +344,7 @@
     <string name="ocr_engine_ml_kit_latin">ML_KIT_LATIN</string>
     <string name="ocr_engine_ml_kit_japanese">ML_KIT_JAPANESE</string>
     <string name="ocr_engine_ml_kit_chinese">ML_KIT_CHINESE</string>
+    <string name="ocr_engine_ml_kit_korean">ML_KIT_KOREAN</string>
     <string name="ocr_engine_baidu">BAIDU</string>
     <string name="ocr_engine_tencent">TENCENT</string>
     <string name="ocr_engine_paddle_onnx">PADDLE_ONNX</string>
@@ -351,7 +358,7 @@
     <string name="notif_text">点悬浮按钮触发识别 · 长按切换自动翻译</string>
 
     <!-- 无障碍 -->
-    <string name="a11y_desc">监听音量键作为全局快捷键触发截屏翻译。只在设置里手动开启后生效，不读取屏幕内容。</string>
+    <string name="a11y_desc">监听音量键组合（同时按音量+ 和 音量- 0.3 秒）作为全局快捷键触发截屏翻译。只在设置里手动开启后生效，不读取屏幕内容、不解析窗口。</string>
     <string name="a11y_summary">屏译 · 音量键触发器</string>
 
     <!-- 百度 OCR endpoint 显示名 / 免费配额 -->
@@ -363,6 +370,26 @@
     <string name="baidu_endpoint_quota_1000_day">1000 次/天免费</string>
     <string name="baidu_endpoint_quota_500_day">500 次/天免费</string>
 
+    <!-- OCR 语种参数（百度 language_type / 腾讯 LanguageType） -->
+    <string name="settings_baidu_lang_label">识别语种 (language_type)</string>
+    <string name="settings_tencent_lang_label">识别语种 (LanguageType)</string>
+    <string name="settings_baidu_lang_loc_warning">「网络图片」端点不读取 language_type（永远按中英混合识别）；要识别韩文 / 日文等小语种请切到「标准版」/「高精度版」/「含位置版」/「高精度+位置」。</string>
+    <string name="settings_tencent_lang_accurate_warning">「高精度版」只支持 中文 / 自动；其他选项会自动降级为「自动」。</string>
+    <string name="ocr_lang_auto_detect">自动识别</string>
+    <string name="ocr_lang_chn_eng">中英文</string>
+    <string name="ocr_lang_zh_rare">中英 + 生僻字</string>
+    <string name="ocr_lang_mix">多语种自动混排</string>
+    <string name="lang_th">泰语</string>
+    <string name="lang_vi">越南语</string>
+
+    <!-- 源语言切换时联动 OCR：当前引擎不支持新源语言时弹出 -->
+    <string name="ocr_lang_issue_title">OCR 引擎可能识别不准</string>
+    <string name="ocr_lang_issue_msg">你刚把源语言切到 \"%1$s\"，但当前 OCR 引擎可能识别不准。\n建议切换到「%2$s」。</string>
+    <string name="ocr_lang_issue_msg_keys_missing">识别 \"%1$s\" 推荐用「%2$s」（云端 OCR）。还没填对应 API Key，去 OCR 设置里填一下。</string>
+    <string name="ocr_lang_issue_btn_apply">切换</string>
+    <string name="ocr_lang_issue_btn_setup">去设置</string>
+    <string name="ocr_lang_issue_btn_keep">保持不变</string>
+
     <!-- 腾讯 OCR endpoint 显示名 / desc -->
     <string name="tencent_endpoint_general_basic_name">通用印刷体</string>
     <string name="tencent_endpoint_general_accurate_name">高精度版</string>
@@ -370,6 +397,12 @@
     <string name="tencent_endpoint_general_basic_desc">最常用，每月 1000 次免费</string>
     <string name="tencent_endpoint_general_accurate_desc">识别更准但慢，每月 1000 次免费</string>
     <string name="tencent_endpoint_recognize_agent_desc">LLM 增强，适合复杂排版 / 手写</string>
+
+    <!-- 区域选择器 -->
+    <string name="region_picker_hint_drawing">拖动框选要翻译的区域 · 双击使用整屏</string>
+    <string name="region_picker_btn_confirm">确认</string>
+    <string name="region_picker_btn_cancel">取消</string>
+    <string name="region_picker_btn_redo">重画</string>
 
     <!-- 默认 Prompt -->
     <string name="default_prompt">你是一名专业的译者，把下面的{source}原文翻译成{target}。要求：\n1. 保留人名、地名等专有名词；\n2. 自然流畅，避免直译腔；\n3. 只输出译文，不加解释、不加引号。\n原文：\n</string>

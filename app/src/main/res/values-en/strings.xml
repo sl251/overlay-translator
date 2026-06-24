@@ -41,6 +41,10 @@
     <string name="main_btn_open_battery_whitelist">Open battery whitelist</string>
     <string name="main_btn_pick_region">Pick region</string>
     <string name="main_btn_clear_region">Clear region (use full screen)</string>
+    <string name="main_clear_region_dialog_title">Clear capture region?</string>
+    <string name="main_clear_region_dialog_msg">The next capture will use the full screen. Your selection will be discarded — you can pick a new region anytime.</string>
+    <string name="main_clear_region_dialog_confirm">Clear</string>
+    <string name="main_clear_region_dialog_cancel">Cancel</string>
     <string name="main_label_start_mode">Start mode</string>
     <string name="main_label_usage">Usage</string>
     <string name="main_usage_text">Floating ball: tap to translate once; long-press to toggle auto loop; drag to move.</string>
@@ -171,12 +175,13 @@
     <string name="settings_prompt_reset">Restore default prompt (with placeholders)</string>
     <string name="settings_ocr_chip_auto">Auto</string>
     <string name="settings_ocr_chip_japanese">Japanese</string>
+    <string name="settings_ocr_chip_korean">Korean</string>
     <string name="settings_ocr_chip_chinese">Chinese</string>
     <string name="settings_ocr_chip_latin">Latin</string>
     <string name="settings_ocr_chip_baidu">Baidu</string>
     <string name="settings_ocr_chip_tencent">Tencent</string>
     <string name="settings_ocr_chip_paddle">PaddleOCR</string>
-    <string name="settings_ocr_intro">Pick the OCR engine for the text type:\n• Auto / Japanese / Chinese / Latin: Google ML Kit on-device (free, offline). \"Auto\" switches among three models by hiragana/katakana detection; pinning a specific one slightly improves accuracy.\n• PaddleOCR: on-device multilingual; better on complex layouts. First use downloads ~20MB models.\n• Baidu / Tencent Cloud: cloud OCR with API key (pay-as-you-go); good fallback for missed text.</string>
+    <string name="settings_ocr_intro">Pick the OCR engine for the text type:\n• Auto / Japanese / Korean / Chinese / Latin: Google ML Kit on-device (free, offline). \"Auto\" picks the model by detecting Hangul / kana; pinning a specific language slightly improves accuracy.\n• PaddleOCR: on-device multilingual; better on complex layouts. First use downloads ~20MB models. (Korean dict not bundled — use ML Kit or cloud for Korean.)\n• Baidu / Tencent Cloud: cloud OCR with API key (pay-as-you-go); pick Korean / Japanese etc. under \"Recognition language\" as a fallback.</string>
     <string name="settings_baidu_api_key">Baidu API Key</string>
     <string name="settings_baidu_secret_key">Baidu Secret Key</string>
     <string name="settings_baidu_endpoint_label">Endpoint type (each has its own free quota on the Baidu console)</string>
@@ -225,6 +230,7 @@
     <string name="settings_floating_size_format">Floating button size: %1$d dp</string>
     <string name="settings_loop_interval_label">Auto-loop interval (ms)</string>
     <string name="settings_a11y_volume_label">Volume key trigger (requires accessibility service)</string>
+    <string name="settings_a11y_volume_hint">Hold Volume+ and Volume- together for 0.3s to trigger one capture. Single key still adjusts volume normally.</string>
     <string name="settings_btn_open_a11y">Open system accessibility settings</string>
     <string name="settings_api_timeout_format">API request timeout: %1$d s</string>
     <string name="settings_api_timeout_hint">Applies to all cloud APIs: Baidu / Tencent OCR, OpenAI-compatible translation, DeepL. Streaming translation uses 2× this limit.\nPaddleOCR on-device model download is not affected (uses a fixed 60s).</string>
@@ -338,6 +344,7 @@
     <string name="ocr_engine_ml_kit_latin">ML_KIT_LATIN</string>
     <string name="ocr_engine_ml_kit_japanese">ML_KIT_JAPANESE</string>
     <string name="ocr_engine_ml_kit_chinese">ML_KIT_CHINESE</string>
+    <string name="ocr_engine_ml_kit_korean">ML_KIT_KOREAN</string>
     <string name="ocr_engine_baidu">BAIDU</string>
     <string name="ocr_engine_tencent">TENCENT</string>
     <string name="ocr_engine_paddle_onnx">PADDLE_ONNX</string>
@@ -351,7 +358,7 @@
     <string name="notif_text">Tap the floating ball to translate · long-press to toggle auto</string>
 
     <!-- Accessibility -->
-    <string name="a11y_desc">Listens to the volume keys as a global shortcut to trigger screen translation. Only active after you turn it on in settings; does not read screen content.</string>
+    <string name="a11y_desc">Listens for a volume-key combo (Volume+ and Volume- held together for 0.3s) as a global shortcut to trigger screen translation. Only active after you turn it on in settings; does not read screen content or window structure.</string>
     <string name="a11y_summary">GameOcr · Volume-key trigger</string>
 
     <!-- Baidu OCR endpoint names / quotas -->
@@ -363,6 +370,26 @@
     <string name="baidu_endpoint_quota_1000_day">1000/day free</string>
     <string name="baidu_endpoint_quota_500_day">500/day free</string>
 
+    <!-- OCR language parameter (Baidu language_type / Tencent LanguageType) -->
+    <string name="settings_baidu_lang_label">Recognition language (language_type)</string>
+    <string name="settings_tencent_lang_label">Recognition language (LanguageType)</string>
+    <string name="settings_baidu_lang_loc_warning">The \"Web image\" endpoint ignores language_type (always uses Chinese-English). To recognize Korean / Japanese etc., switch to Standard / Accurate / Standard+location / Accurate+location.</string>
+    <string name="settings_tencent_lang_accurate_warning">Accurate endpoint only supports Chinese / Auto; other choices fall back to Auto.</string>
+    <string name="ocr_lang_auto_detect">Auto detect</string>
+    <string name="ocr_lang_chn_eng">Chinese + English</string>
+    <string name="ocr_lang_zh_rare">Chinese + rare characters</string>
+    <string name="ocr_lang_mix">Mixed multilingual (auto)</string>
+    <string name="lang_th">Thai</string>
+    <string name="lang_vi">Vietnamese</string>
+
+    <!-- Source-language → OCR engine linkage prompt -->
+    <string name="ocr_lang_issue_title">OCR engine may not recognize this</string>
+    <string name="ocr_lang_issue_msg">You switched source language to \"%1$s\", but the current OCR engine may not recognize it well.\nRecommend switching to \"%2$s\".</string>
+    <string name="ocr_lang_issue_msg_keys_missing">For \"%1$s\", \"%2$s\" (cloud OCR) is recommended. Add the matching API key in the OCR settings.</string>
+    <string name="ocr_lang_issue_btn_apply">Apply</string>
+    <string name="ocr_lang_issue_btn_setup">Go to settings</string>
+    <string name="ocr_lang_issue_btn_keep">Keep as-is</string>
+
     <!-- Tencent OCR endpoint names / desc -->
     <string name="tencent_endpoint_general_basic_name">General print</string>
     <string name="tencent_endpoint_general_accurate_name">Accurate</string>
@@ -370,6 +397,12 @@
     <string name="tencent_endpoint_general_basic_desc">Most common, 1000/month free</string>
     <string name="tencent_endpoint_general_accurate_desc">More accurate but slower, 1000/month free</string>
     <string name="tencent_endpoint_recognize_agent_desc">LLM-enhanced, good for complex layout / handwriting</string>
+
+    <!-- Region picker -->
+    <string name="region_picker_hint_drawing">Drag to select the translation area · double-tap for full screen</string>
+    <string name="region_picker_btn_confirm">Confirm</string>
+    <string name="region_picker_btn_cancel">Cancel</string>
+    <string name="region_picker_btn_redo">Redraw</string>
 
     <!-- Default prompt -->
     <string name="default_prompt">You are a professional translator. Translate the following {source} text into {target}. Rules:\n1. Keep proper nouns (names of people, places, etc.);\n2. Sound natural and fluent, avoid literal phrasing;\n3. Output the translation only — no explanations, no quotes.\nText:\n</string>

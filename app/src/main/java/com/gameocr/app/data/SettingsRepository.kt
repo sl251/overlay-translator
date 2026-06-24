@@ -68,7 +68,9 @@ class SettingsRepository @Inject constructor(
         val OverlayWrap = booleanPreferencesKey("overlay_allow_wrap")
         val OverlayCollision = booleanPreferencesKey("overlay_avoid_collision")
         val BaiduEndpoint = stringPreferencesKey("baidu_ocr_endpoint")
+        val BaiduLanguage = stringPreferencesKey("baidu_ocr_language")
         val TencentEndpoint = stringPreferencesKey("tencent_ocr_endpoint")
+        val TencentLanguage = stringPreferencesKey("tencent_ocr_language")
         val ApiTimeoutSec = intPreferencesKey("api_timeout_seconds")
         val MergeAdjacent = booleanPreferencesKey("ocr_merge_adjacent")
     }
@@ -123,7 +125,9 @@ class SettingsRepository @Inject constructor(
             prefs[Keys.OverlayWrap] = next.overlayAllowWrap
             prefs[Keys.OverlayCollision] = next.overlayAvoidCollision
             prefs[Keys.BaiduEndpoint] = next.baiduOcrEndpoint.name
+            prefs[Keys.BaiduLanguage] = next.baiduOcrLanguage.name
             prefs[Keys.TencentEndpoint] = next.tencentOcrEndpoint.name
+            prefs[Keys.TencentLanguage] = next.tencentOcrLanguage.name
             prefs[Keys.ApiTimeoutSec] = next.apiTimeoutSeconds
             prefs[Keys.MergeAdjacent] = next.mergeAdjacentBlocks
         }
@@ -196,8 +200,12 @@ class SettingsRepository @Inject constructor(
             overlayAvoidCollision = this[Keys.OverlayCollision] ?: default.overlayAvoidCollision,
             baiduOcrEndpoint = runCatching { BaiduOcrEndpoint.valueOf(this[Keys.BaiduEndpoint] ?: "") }
                 .getOrDefault(default.baiduOcrEndpoint),
+            baiduOcrLanguage = runCatching { BaiduOcrLanguage.valueOf(this[Keys.BaiduLanguage] ?: "") }
+                .getOrDefault(default.baiduOcrLanguage),
             tencentOcrEndpoint = runCatching { TencentOcrEndpoint.valueOf(this[Keys.TencentEndpoint] ?: "") }
                 .getOrDefault(default.tencentOcrEndpoint),
+            tencentOcrLanguage = runCatching { TencentOcrLanguage.valueOf(this[Keys.TencentLanguage] ?: "") }
+                .getOrDefault(default.tencentOcrLanguage),
             apiTimeoutSeconds = this[Keys.ApiTimeoutSec] ?: default.apiTimeoutSeconds,
             mergeAdjacentBlocks = this[Keys.MergeAdjacent] ?: default.mergeAdjacentBlocks
         )

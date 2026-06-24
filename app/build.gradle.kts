@@ -119,10 +119,11 @@ dependencies {
     implementation(libs.okhttp.logging)
     implementation(libs.kotlinx.serialization.json)
 
-    // ML Kit (M0: 仅打包 latin + 日 + 中；韩文按需可加)
+    // ML Kit (latin + 日 + 中 + 韩，四种端侧识别器；AUTO 模式按文字类型挑选)
     implementation(libs.mlkit.text.recognition)
     implementation(libs.mlkit.text.recognition.japanese)
     implementation(libs.mlkit.text.recognition.chinese)
+    implementation(libs.mlkit.text.recognition.korean)
 
     // DataStore / Room
     implementation(libs.androidx.datastore.preferences)

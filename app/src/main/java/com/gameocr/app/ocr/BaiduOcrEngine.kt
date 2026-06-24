@@ -60,7 +60,22 @@ class BaiduOcrEngine @Inject constructor(
 
         val url = "https://aip.baidubce.com/rest/2.0/ocr/v1/${endpoint.path}".toHttpUrl()
             .newBuilder().addQueryParameter("access_token", token).build()
-        val form = FormBody.Builder().add("image", imageBase64).build()
+        // language_type 在不同端点支持范围不同：
+        //  - accurate_basic / accurate（高精度系）：全 25 种含 auto_detect
+        //  - general_basic / general（标准系）：10 种主流（CHN_ENG/ENG/JAP/KOR/FRE/SPA/POR/GER/ITA/RUS）
+        //  - webimage：不读 language_type
+        // 兜底：用户选的语种若在当前 endpoint 不支持，降级到 CHN_ENG 避免 216200 error。
+        val form = FormBody.Builder()
+            .add("image", imageBase64)
+            .apply {
+                if (settings.baiduOcrLanguage.supportedOn(endpoint)) {
+                    add("language_type", settings.baiduOcrLanguage.code)
+                } else if (endpoint != com.gameocr.app.data.BaiduOcrEndpoint.WEBIMAGE) {
+                    // 该端点本来支持 language_type，只是用户选的具体语种不在子集里 → 兜底
+                    add("language_type", com.gameocr.app.data.BaiduOcrLanguage.CHN_ENG.code)
+                }
+            }
+            .build()
         val req = Request.Builder().url(url).post(form).build()
 
         val resp = withContext(Dispatchers.IO) {

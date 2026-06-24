@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -94,6 +95,7 @@ fun MainScreen(
     val serviceRunning by CaptureServiceState.running.collectAsState()
     var startMode by remember { mutableStateOf(StartMode.MEDIA_PROJECTION) }
     var userOverrodeMode by remember { mutableStateOf(false) }
+    var showClearRegionDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     // Shizuku 就绪时默认选 Shizuku（用户未手动切换过的前提下）。
@@ -132,6 +134,28 @@ fun MainScreen(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    if (showClearRegionDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearRegionDialog = false },
+            title = { Text(stringResource(R.string.main_clear_region_dialog_title)) },
+            text = { Text(stringResource(R.string.main_clear_region_dialog_msg)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showClearRegionDialog = false
+                    scope.launch {
+                        viewModel.clearRegion()
+                        region = null
+                    }
+                }) { Text(stringResource(R.string.main_clear_region_dialog_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearRegionDialog = false }) {
+                    Text(stringResource(R.string.main_clear_region_dialog_cancel))
+                }
+            }
+        )
     }
 
     Scaffold(
@@ -312,14 +336,11 @@ fun MainScreen(
                     onClick = { context.startActivity(RegionPickerActivity.newIntent(context)) }
                 ) { Text(stringResource(R.string.main_btn_pick_region)) }
                 if (region != null) {
-                    TextButton(
+                    // 跟「选择截屏区域」按钮同样的 OutlinedButton 样式，视觉对等；
+                    // 清除是破坏性操作，弹二次确认避免误触。
+                    OutlinedButton(
                         modifier = Modifier.fillMaxWidth(),
-                        onClick = {
-                            scope.launch {
-                                viewModel.clearRegion()
-                                region = null
-                            }
-                        }
+                        onClick = { showClearRegionDialog = true }
                     ) { Text(stringResource(R.string.main_btn_clear_region)) }
                 }
             }

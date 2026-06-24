@@ -7,6 +7,8 @@ import android.util.Base64
 import com.gameocr.app.R
 import com.gameocr.app.data.OcrEngineKind
 import com.gameocr.app.data.SettingsRepository
+import com.gameocr.app.data.TencentOcrEndpoint
+import com.gameocr.app.data.TencentOcrLanguage
 import com.gameocr.app.data.withApiTimeout
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.crypto.Mac
@@ -62,12 +64,22 @@ class TencentOcrEngine @Inject constructor(
                 Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
             }
         }
+        val endpoint = s.tencentOcrEndpoint
+        // 官方文档：
+        //  - GeneralBasicOCR 支持 LanguageType（全 23 种）
+        //  - GeneralAccurateOCR 不接受 LanguageType（要用 ConfigID="MulOCR" 切多语种，本工程未接入）
+        //  - RecognizeAgent 是 LLM 增强，自动多语判断
+        val languageCode: String? = if (s.tencentOcrLanguage.supportedOn(endpoint)) {
+            s.tencentOcrLanguage.code
+        } else {
+            null
+        }
         val payload = json.encodeToString(JsonObject.serializer(), buildJsonObject {
             put("ImageBase64", imgB64)
+            if (languageCode != null) put("LanguageType", languageCode)
         })
 
         val timedClient = client.withApiTimeout(s.apiTimeoutSeconds)
-        val endpoint = s.tencentOcrEndpoint
         val resp = withContext(Dispatchers.IO) {
             doSignedCall(
                 httpClient = timedClient,
