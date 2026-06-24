@@ -1,24 +1,72 @@
-# GameOcr · Android 屏幕实时翻译
+<div align="center">
 
-通过 MediaProjection / Shizuku 截屏 → 端侧或云端 OCR → LLM / 机器翻译 → 悬浮窗叠加显示。无需 ROOT，单机可用，面向视觉小说、漫画、游戏对话等任意屏上文字的实时翻译。
+**简体中文** · [English](README.en.md)
 
-> 桌面端思路参考 [baoxin1100/gameocr](https://github.com/baoxin1100/gameocr) / VNR 类工具，移植到 Android 并在 OCR 与翻译管线上做了端云混合扩展。
+# GameOcr
 
-## 功能
+**Android 屏幕实时翻译 · 截屏 → OCR → 翻译 → 悬浮窗叠加**
 
-- **截屏**：MediaProjection + ImageReader（前台服务 `mediaProjection` 类型 / Android 14+ 兼容）；可选 Shizuku 路径免每次系统授权弹窗
+[![License](https://img.shields.io/github/license/ciddwd/overlay-translator?style=flat-square)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/ciddwd/overlay-translator?include_prereleases&style=flat-square)](../../releases)
+[![Downloads](https://img.shields.io/github/downloads/ciddwd/overlay-translator/total?style=flat-square)](../../releases)
+[![Stars](https://img.shields.io/github/stars/ciddwd/overlay-translator?style=flat-square)](../../stargazers)
+[![Issues](https://img.shields.io/github/issues/ciddwd/overlay-translator?style=flat-square)](../../issues)
+![Android API](https://img.shields.io/badge/Android-8.0%20%28API%2026%29%2B-3DDC84?style=flat-square&logo=android&logoColor=white)
+![Kotlin](https://img.shields.io/badge/Kotlin-2.x-7F52FF?style=flat-square&logo=kotlin&logoColor=white)
+![Compose](https://img.shields.io/badge/Jetpack-Compose-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white)
+
+通过 MediaProjection / Shizuku 截屏 → 端侧或云端 OCR → LLM / 机器翻译 → 悬浮窗叠加显示。
+无需 ROOT，单机可用，面向视觉小说、漫画、游戏对话等任意屏上文字的实时翻译。
+
+[安装](#-安装) · [使用](#-使用) · [配置](#-配置) · [参与开发](#-参与开发) · [Releases](../../releases) · [Issues](../../issues)
+
+</div>
+
+---
+
+## ✨ 功能
+
+- **截屏**：MediaProjection + ImageReader（前台服务 `mediaProjection` 类型，Android 14+ 兼容）；可选 Shizuku 路径免每次系统授权弹窗
 - **触发**：悬浮按钮单击触发一次，长按切循环模式（默认 1 秒一次，dHash 帧差跳过静止画面）；可选无障碍服务接管音量键作为全局触发
 - **区域选择**：全屏拉框，记忆上次区域，避免 OCR 全屏背景噪声
 - **OCR 引擎**（路由式，按设置切换）：
-  - ML Kit 端侧（拉丁 / 日 / 中），AUTO 模式按假名命中切换
+  - ML Kit 端侧（拉丁 / 日 / 中 / 韩，AUTO 按假名命中切换）
   - PaddleOCR PP-OCRv5 mobile（ONNX Runtime，端侧多语种）
   - 云端兜底：百度 OCR / 腾讯 OCR
 - **翻译**（路由式）：
-  - OpenAI 兼容 chat completions（默认 DeepSeek，可改任意 base URL：SiliconFlow / 智谱 / Ollama / OpenAI ……）
-  - DeepL
-- **叠加显示**：整屏底部条 / 按 boundingBox 紧贴原文渲染；LRU 缓存命中跳过翻译 token 消耗
+  - OpenAI 兼容 chat completions（DeepSeek / SiliconFlow / 智谱 / Ollama / OpenAI ……）+ SSE 流式输出
+  - DeepL（免费 / Pro 自动识别）
+- **叠加显示**：
+  - 两种渲染模式：按 boundingBox 紧贴原文 / 屏幕底部整条横幅
+  - 5 种内置主题（经典深色 / 琥珀黑金 / 浅色纸张 / 霜玻璃 / 自定义）+ 字号、透明度、边框、偏移微调
+  - 智能避让相邻 OCR 框，可换行 / 紧凑单行
+  - LRU 翻译缓存，命中跳过 token 消耗
+- **图像预处理**：2× 上采样、反色、Otsu 二值化（针对低对比度 / 暗底白字 / 颜色噪声）
+- **应用本身**：
+  - 中 / 英双语界面 + 浅色 / 深色 / 跟随系统 三档主题，皆即时生效
+  - 设置页内搜索（中英关键字均可命中）
+  - API Key / Secret 全部 password masking + 显示切换
+  - 厂商 ROM 兼容引导（自启动 / 电池白名单，含小米 / OPPO / VIVO / 华为 / 三星）
 
-## 安装
+## 📸 截图
+
+**实际译文叠加** —— Discord 沟通规则页，OCR 紧贴原文渲染：
+
+| 经典深色主题 | 浅色纸张主题 |
+|---|---|
+| <img src="docs/screenshots/overlay-discord-dark.png" width="320" alt="经典深色译文叠加" /> | <img src="docs/screenshots/overlay-discord-light.png" width="320" alt="浅色纸张译文叠加" /> |
+
+**游戏场景** —— Sandship UI 的中文识别与覆盖：
+
+<img src="docs/screenshots/overlay-game.png" width="640" alt="游戏内译文叠加" />
+
+**设置页**：
+
+| 应用语言 / 主题 / 翻译后端 | OCR 引擎 / 预处理 | 译文样式预览 |
+|---|---|---|
+| <img src="docs/screenshots/settings-top.png" width="240" alt="设置顶部" /> | <img src="docs/screenshots/settings-ocr.png" width="240" alt="OCR 引擎设置" /> | <img src="docs/screenshots/settings-display.png" width="240" alt="译文显示设置" /> |
+
+## 📦 安装
 
 1. 到本仓库的 [Releases](../../releases) 页下载最新 `GameOcr-x.y.z.apk`
 2. 在 Android 设备上点击安装（首次需在系统设置允许"安装未知来源应用"）
@@ -26,7 +74,7 @@
 
 只发布 `arm64-v8a` 架构。每个 APK 同时附带 `.sha256` 校验文件，可对照本地 `Get-FileHash` / `sha256sum` 输出确认下载完整性。
 
-## 使用
+## 🚀 使用
 
 1. 启动 App，点 **启动截屏服务**，确认系统弹出的"开始截屏？"对话框
 2. 切到任意游戏 / 视觉小说 / 漫画 App
@@ -38,9 +86,9 @@
 - 在系统"无障碍"里启用本应用，用音量键作为全局触发，免去手指点屏
 - 安装 [Shizuku](https://github.com/RikkaApps/Shizuku) 并授权后，在设置切换到 Shizuku 截屏路径，免去每次的系统授权弹窗
 
-## 配置
+## ⚙️ 配置
 
-启动 App 后进入"设置"。
+启动 App 后进入"设置"。设置页顶部可切换 **应用语言** 与 **主题模式**；任意 section 都可用搜索图标按关键字（中英文都行）快速跳转。
 
 ### OCR 引擎
 
@@ -48,8 +96,8 @@
 |---|---|---|
 | ML Kit (auto / latin / ja / zh) | 默认；日文 / 中文 / 拉丁字符 | 无需外网，端侧推理 |
 | PaddleOCR PP-OCRv5 mobile | 多语种密排文字、UI 按钮 | 首次使用需下载 ONNX 模型，见下 |
-| 百度 OCR | ML Kit / Paddle 漏检兜底 | 需 API Key，按量计费 |
-| 腾讯 OCR | 同上 | 需 SecretId/SecretKey |
+| 百度 OCR | ML Kit / Paddle 漏检兜底 | 需 API Key + Secret，按量计费；图片有尺寸 / 宽高比限制 |
+| 腾讯 OCR | 同上 | 需 SecretId + SecretKey |
 
 **PaddleOCR 模型下载**：设置 → "下载 PaddleOCR 模型"，自动从 HuggingFace / hf-mirror 镜像拉取以下三个文件到 `<filesDir>/models/paddle/`：
 
@@ -59,9 +107,12 @@
 
 可在设置里自定义镜像 URL，或手动从本地文件导入。
 
+**百度 OCR 注意事项**：图片限制为 *最长边 ≤ 4096px、最短边 ≥ 15px、宽高比 1:4 ~ 4:1、base64 后 < 4MB*。本项目对前两条会自动缩放兜底，宽高比超限只能调小 / 重画截屏区。
+
 ### 翻译引擎
 
 **OpenAI 兼容**：
+
 - **Base URL**：以 `/v1/` 结尾，例如：
   - SiliconFlow `https://api.siliconflow.cn/v1/`
   - OpenAI 官方 `https://api.openai.com/v1/`
@@ -73,39 +124,121 @@
   - OpenAI: `gpt-4o-mini`、`gpt-4o`
   - 智谱: `glm-4-flash`、`glm-4-plus`
   - Ollama: `qwen2.5:7b`、`llama3.1:8b`
-- **Prompt 模板**：默认 galgame 口语化风格，可自定义
+- **Prompt 模板**：默认 galgame 口语化风格，可自定义。Prompt 跟随 UI 语言：从未改过 prompt 的用户切换 UI 语言时自动迁移到对应 locale 的默认 prompt；已自定义的 prompt 不会被覆盖。
 
 **DeepL**：填 Auth Key（free 版 key 末尾带 `:fx`），自动选择 free / pro endpoint。
 
-## 已知限制
+### 显示
+
+- **渲染模式**：BLOCKS（按 OCR 框紧贴原文）/ BANNER（屏幕底部整条）
+- **位置**：BLOCKS 下可选 below / overlap / above + 像素级 x/y 偏移微调
+- **主题色**：5 种预设 + 自定义（背景 / 文字 / 边框 ARGB）
+- **避让 & 合并**：碰撞检测限制译文宽度不挤进相邻 OCR 框；可选段落合并把同一气泡 / 字幕的多行 OCR 框聚合成一段送翻译
+
+## ⚠️ 已知限制
 
 - Android 14+ 每次首次启动截屏都会弹一次系统授权窗，这是 Google 设计；Shizuku 路径可绕过
 - 部分 ROM（小米 / OPPO / VIVO）默认杀后台 / 拦截悬浮窗，需手动加入电池白名单 + 允许后台启动；应用内有兼容引导
 - 反作弊网游可能把 MediaProjection 判为外挂截屏 → 本项目仅适用于单机 / 视觉小说 / 漫画
 - 设置了 `FLAG_SECURE` 的画面（部分网银 / 视频 App）截出来是黑屏，本项目不做绕过
 - PaddleOCR 端侧推理在低端机（骁龙 7 系以下）单次约 1~3 秒；推荐配合区域选择使用
+- 国产 ROM（HyperOS / MIUI 等）对后台 Service Toast 静默拦截，OCR / 网络失败已改用悬浮错误条提示（红底、4.5s 自动消失）
 
-## 路线图
+## 🗺️ 路线图
 
-- **M0（当前）**：MediaProjection 截屏 + ML Kit + PaddleOCR + OpenAI 兼容翻译 + 悬浮按钮 + 底部译文条
-- **M1**：区域选择持久化、SSE 流式译文、按 boundingBox 紧贴原文渲染、ROM 兼容引导完善
-- **M2**：Shizuku 高级路径完善（全局快捷键 + 免授权弹窗）、云 OCR 兜底链路、NCNN 竖排日文
+- **M0**：MediaProjection 截屏 + ML Kit + PaddleOCR + OpenAI 兼容翻译 + 悬浮按钮 + 底部译文条
+- **M1（当前）**：区域选择持久化、SSE 流式译文、按 boundingBox 紧贴原文渲染、ROM 兼容引导、i18n（中英）+ 浅 / 深色主题、设置内搜索
+- **M2**：Shizuku 高级路径完善（全局快捷键 + 免授权弹窗）、云 OCR 兜底链路稳定化、社区翻译流程（Weblate 等）
 - **M3**：多翻译引擎对比、对话历史、TTS、术语表
 
-## 致谢
+## 🤝 参与开发
+
+欢迎社区贡献。无论是 bug 修复、新功能、UI 改进、翻译还是文档勘误，都很受欢迎。
+
+### 分支与 PR 规则
+
+> ⚠️ **不要直接 PR 到 `main` 分支。**
+>
+> `main` 是稳定主线，**只接受经维护者审核合入** —— 用作打 tag 发版的基线。
+>
+> 外部 PR 请按以下流程走：
+
+1. **先开 issue 讨论**：说明你想做的改动 / 修的 bug，确认方向，避免做白工
+2. **Fork 仓库**，从最新 `main` 切出 feature 分支：
+   ```bash
+   git checkout -b feat/your-idea  origin/main
+   ```
+3. **本地开发并自测**（至少在一台真机上跑通 `./gradlew installDebug`）
+4. **PR 提交到 `dev` 分支**（如仓库还没有 `dev`，请在 issue 里 ping 维护者建立）；维护者会在 `dev` 上聚合多人 PR、复测后整合到 `main`
+5. **直接 push 到 `main` / 强推 `main` 是被禁止的**（仓库会通过 branch protection 拦截）
+
+### 翻译贡献
+
+如果想加入新语言或修正现有翻译：
+
+1. 复制 `app/src/main/res/values/strings.xml` 到 `app/src/main/res/values-<lang>/strings.xml`（例如 `values-zh-rTW`、`values-ja`）
+2. 只翻译 `<string>` 标签内的值，**保留** key（`name="..."`）和占位符（`{source}`、`{target}`、`%1$s`、`\n` 等）
+3. 在 `app/src/main/res/xml/locales_config.xml` 添加 `<locale android:name="<lang>" />`
+4. 在 `app/src/main/java/com/gameocr/app/ui/SettingsScreen.kt` 的 `APP_LANGUAGE_OPTIONS` 追加一行
+5. 在 PR 描述里附上覆盖率（多少条字符串已翻译）与试译截图
+
+未来若有 10+ 种语言，会迁移到 [Weblate](https://weblate.org/) 在线协作平台，简化流程。
+
+### Commit message
+
+推荐遵循 [Conventional Commits](https://www.conventionalcommits.org/) 简化版：
+
+```
+feat: 新功能
+fix:  bug 修复
+docs: 文档
+refactor: 重构（不改行为）
+chore: 构建 / CI / 工具链
+i18n: 翻译相关
+```
+
+副标题与正文请用中文或英文，**不要混在一句话里**；首行 ≤ 72 字符。
+
+### 行为准则
+
+- 友善、就事论事，对人不动情绪
+- 不发与项目无关的内容 / 商业推广 / 政治议题
+- 维护者保留以"不符合项目方向"为由关闭 issue / PR 的权利，并会说明原因
+
+## 🙏 致谢
+
+### 上游项目
 
 - [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) · PP-OCRv5 mobile 模型
 - [bukuroo/PPOCRv5-ONNX](https://huggingface.co/bukuroo/PPOCRv5-ONNX) · 已转 ONNX 的 v5 mobile 镜像
 - [Shizuku](https://github.com/RikkaApps/Shizuku) · 免 ROOT 的高权限通道
 - [ML Kit](https://developers.google.com/ml-kit) · Google 端侧 OCR
+- [ONNX Runtime](https://onnxruntime.ai/) · 端侧推理引擎
+- [Jetpack Compose](https://developer.android.com/jetpack/compose) / [Material 3](https://m3.material.io/) · UI 体系
+- [Hilt](https://dagger.dev/hilt/) · 依赖注入
+- [Retrofit](https://square.github.io/retrofit/) + [OkHttp](https://square.github.io/okhttp/) · 网络
+- [kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization) · JSON 序列化
+- [Timber](https://github.com/JakeWharton/timber) · 日志
 
-## 许可
+### 贡献者
 
-代码采用 Apache-2.0。模型与第三方依赖各自保留原协议。
+<a href="https://github.com/ciddwd/overlay-translator/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=ciddwd/overlay-translator" />
+</a>
+
+（首次 PR 合入后会自动出现在这里）
+
+### 灵感来源
+
+桌面端 VNR / Visual Novel Reader 等同类工具长期以来在 PC 平台为 galgame / 视觉小说玩家提供实时翻译。本项目把这条管线带到 Android，并针对手机场景（电池、ROM 限制、touch UI）做了重新设计。
+
+## 📄 许可
+
+代码采用 [Apache-2.0](LICENSE)。模型与第三方依赖各自保留原协议。
 
 ---
 
-# 开发者
+# 🛠️ 开发者文档
 
 下面是开发者构建、调试与发版相关的内容；普通用户使用 [Releases](../../releases) 中的 APK 即可，不需要阅读这一部分。
 
@@ -114,7 +247,7 @@
 - Kotlin 2.x · Jetpack Compose · Hilt
 - Android `minSdk 26` / `targetSdk 35`（Android 8.0+ 可运行，Android 10+ 体验最好）
 - Retrofit + OkHttp + kotlinx.serialization
-- DataStore（配置）+ Room（缓存）
+- DataStore（业务设置）+ SharedPreferences（主题 / locale 等需同步读取的偏好）+ Room（缓存）
 - ONNX Runtime Android（PaddleOCR 端侧推理）
 - ML Kit on-device text recognition
 - Shizuku API
@@ -126,14 +259,19 @@ app/src/main/java/com/gameocr/app/
   capture/    Screenshotter 接口 + MediaProjection / Shizuku 实现 + 区域选择 + 帧差
   ocr/        OcrEngine 接口 + ML Kit / PaddleOCR / 百度 / 腾讯 + RoutingOcrEngine
   translate/  Translator 接口 + OpenAI / DeepL + LRU 缓存 + RoutingTranslator
-  overlay/    悬浮按钮 + 译文叠加渲染
+  overlay/    悬浮按钮 + 译文 / loading / 错误悬浮条
   service/    CaptureService 前台服务（截屏 → OCR → 翻译 → 渲染 主控）
   trigger/    无障碍服务（音量键触发器，可选）
   shizuku/    Shizuku 权限与 IBinder 桥接
   rom/        小米 / OPPO / VIVO 等厂商 ROM 兼容引导
-  data/       Settings 模型 + DataStore Repository
+  data/       Settings 模型 + DataStore Repository + ThemeModePrefs + AppLocalePrefs
   di/         Hilt 模块
-  ui/         MainActivity + MainScreen + SettingsScreen + ViewModel + Compose 主题
+  ui/         MainActivity + MainScreen + SettingsScreen + LogScreen + Compose 主题
+
+app/src/main/res/
+  values/                默认（中文）strings.xml + themes.xml + colors.xml
+  values-en/             英文 strings.xml
+  xml/locales_config.xml 应用支持的 per-app locale 清单（Android 13+）
 
 tools/local_ocr_debug/  PC 端复现 PaddleOCR 流水线的 Python 脚本（见"开发与调试"）
 .github/workflows/      CI：push tag 自动发版到 Releases
@@ -150,8 +288,8 @@ tools/local_ocr_debug/  PC 端复现 PaddleOCR 流水线的 Python 脚本（见"
 ### 克隆与配置
 
 ```bash
-git clone https://github.com/<your-account>/GameOcr.git
-cd GameOcr
+git clone https://github.com/ciddwd/overlay-translator.git
+cd overlay-translator
 cp local.properties.example local.properties
 # 编辑 local.properties，把 sdk.dir 改成本机 Android SDK 路径
 ```
