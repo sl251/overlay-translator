@@ -7,62 +7,62 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-// shadcn/UI Zinc palette
-val Zinc50 = Color(0xFFFAFAFA)
-val Zinc100 = Color(0xFFF4F4F5)
-val Zinc200 = Color(0xFFE4E4E7)
-val Zinc300 = Color(0xFFD4D4D8)
-val Zinc400 = Color(0xFFA1A1AA)
-val Zinc500 = Color(0xFF71717A)
-val Zinc600 = Color(0xFF52525B)
-val Zinc700 = Color(0xFF3F3F46)
-val Zinc800 = Color(0xFF27272A)
-val Zinc900 = Color(0xFF18181B)
-val Zinc950 = Color(0xFF09090B)
+// shadcn/UI Slate palette —— 冷调深蓝灰，深色 surface 偏深蓝（不是纯中性灰）。
+val Slate50 = Color(0xFFF8FAFC)
+val Slate100 = Color(0xFFF1F5F9)
+val Slate200 = Color(0xFFE2E8F0)
+val Slate300 = Color(0xFFCBD5E1)
+val Slate400 = Color(0xFF94A3B8)
+val Slate500 = Color(0xFF64748B)
+val Slate600 = Color(0xFF475569)
+val Slate700 = Color(0xFF334155)
+val Slate800 = Color(0xFF1E293B)
+val Slate900 = Color(0xFF0F172A)
+val Slate950 = Color(0xFF020617)
 
 /**
- * Zinc 中性灰主题。覆盖所有 Material3 surface 体系，避免默认 surfaceTint=primary
+ * Slate 冷蓝灰主题。覆盖所有 Material3 surface 体系，避免默认 surfaceTint=primary
  * 导致 Card / Surface 染上紫调。
  */
-private val ZincLight = lightColorScheme(
-    primary = Zinc900,
-    onPrimary = Zinc50,
-    primaryContainer = Zinc200,
-    onPrimaryContainer = Zinc900,
+private val SlateLight = lightColorScheme(
+    primary = Slate900,
+    onPrimary = Slate50,
+    primaryContainer = Slate200,
+    onPrimaryContainer = Slate900,
 
-    secondary = Zinc700,
-    onSecondary = Zinc50,
-    secondaryContainer = Zinc200,
-    onSecondaryContainer = Zinc800,
+    secondary = Slate700,
+    onSecondary = Slate50,
+    secondaryContainer = Slate200,
+    onSecondaryContainer = Slate800,
 
-    tertiary = Zinc600,
-    onTertiary = Zinc50,
-    tertiaryContainer = Zinc100,
-    onTertiaryContainer = Zinc800,
+    tertiary = Slate600,
+    onTertiary = Slate50,
+    tertiaryContainer = Slate100,
+    onTertiaryContainer = Slate800,
 
-    background = Zinc50,
-    onBackground = Zinc900,
+    background = Slate50,
+    onBackground = Slate900,
     surface = Color.White,
-    onSurface = Zinc900,
-    surfaceVariant = Zinc100,
-    onSurfaceVariant = Zinc600,
+    onSurface = Slate900,
+    surfaceVariant = Slate100,
+    onSurfaceVariant = Slate600,
 
     // 完整 surface tones —— 消除紫调
-    surfaceTint = Zinc500,
+    surfaceTint = Slate500,
     surfaceBright = Color.White,
-    surfaceDim = Zinc200,
-    surfaceContainer = Zinc100,
+    surfaceDim = Slate200,
+    surfaceContainer = Slate100,
     surfaceContainerLowest = Color.White,
-    surfaceContainerLow = Zinc50,
-    surfaceContainerHigh = Zinc200,
-    surfaceContainerHighest = Zinc300,
+    surfaceContainerLow = Slate50,
+    surfaceContainerHigh = Slate200,
+    surfaceContainerHighest = Slate300,
 
-    inverseSurface = Zinc900,
-    inverseOnSurface = Zinc50,
-    inversePrimary = Zinc300,
+    inverseSurface = Slate900,
+    inverseOnSurface = Slate50,
+    inversePrimary = Slate300,
 
-    outline = Zinc300,
-    outlineVariant = Zinc200,
+    outline = Slate300,
+    outlineVariant = Slate200,
     scrim = Color(0x66000000),
 
     error = Color(0xFFDC2626),
@@ -71,59 +71,71 @@ private val ZincLight = lightColorScheme(
     onErrorContainer = Color(0xFF7F1D1D),
 )
 
-private val ZincDark = darkColorScheme(
-    primary = Zinc50,
-    onPrimary = Zinc900,
-    primaryContainer = Zinc800,
-    onPrimaryContainer = Zinc50,
+private val SlateDark = darkColorScheme(
+    primary = Slate50,
+    onPrimary = Slate900,
+    primaryContainer = Slate800,
+    onPrimaryContainer = Slate50,
 
-    secondary = Zinc300,
-    onSecondary = Zinc900,
-    secondaryContainer = Zinc800,
-    onSecondaryContainer = Zinc200,
+    secondary = Slate300,
+    onSecondary = Slate900,
+    secondaryContainer = Slate800,
+    onSecondaryContainer = Slate200,
 
-    tertiary = Zinc400,
-    onTertiary = Zinc900,
-    tertiaryContainer = Zinc800,
-    onTertiaryContainer = Zinc100,
+    tertiary = Slate400,
+    onTertiary = Slate900,
+    tertiaryContainer = Slate800,
+    onTertiaryContainer = Slate100,
 
-    background = Zinc950,
-    onBackground = Zinc50,
-    surface = Zinc900,
-    onSurface = Zinc50,
-    surfaceVariant = Zinc800,
-    onSurfaceVariant = Zinc400,
+    background = Slate950,
+    onBackground = Slate50,
+    surface = Slate900,
+    onSurface = Slate50,
+    surfaceVariant = Slate800,
+    onSurfaceVariant = Slate400,
 
-    surfaceTint = Zinc500,
-    surfaceBright = Zinc800,
-    surfaceDim = Zinc950,
-    surfaceContainer = Zinc900,
-    surfaceContainerLowest = Zinc950,
-    surfaceContainerLow = Zinc900,
-    surfaceContainerHigh = Zinc800,
-    surfaceContainerHighest = Zinc700,
+    surfaceTint = Slate500,
+    surfaceBright = Slate800,
+    surfaceDim = Slate950,
+    surfaceContainer = Slate900,
+    surfaceContainerLowest = Slate950,
+    surfaceContainerLow = Slate900,
+    surfaceContainerHigh = Slate800,
+    surfaceContainerHighest = Slate700,
 
-    inverseSurface = Zinc100,
-    inverseOnSurface = Zinc900,
-    inversePrimary = Zinc700,
+    inverseSurface = Slate100,
+    inverseOnSurface = Slate900,
+    inversePrimary = Slate700,
 
-    outline = Zinc700,
-    outlineVariant = Zinc800,
+    outline = Slate700,
+    outlineVariant = Slate800,
     scrim = Color(0x99000000),
 
     error = Color(0xFFEF4444),
-    onError = Zinc950,
+    onError = Slate950,
     errorContainer = Color(0xFF7F1D1D),
     onErrorContainer = Color(0xFFFECACA),
 )
 
+/** 主题模式：值与 [com.gameocr.app.data.ThemeModePrefs] 中的常量对应。 */
+object ThemeMode {
+    const val FOLLOW_SYSTEM = 0
+    const val LIGHT = 1
+    const val DARK = 2
+}
+
 @Composable
 fun GameOcrTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themeMode: Int = ThemeMode.FOLLOW_SYSTEM,
     content: @Composable () -> Unit
 ) {
+    val darkTheme = when (themeMode) {
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+        else -> isSystemInDarkTheme()
+    }
     MaterialTheme(
-        colorScheme = if (darkTheme) ZincDark else ZincLight,
+        colorScheme = if (darkTheme) SlateDark else SlateLight,
         content = content
     )
 }

@@ -34,6 +34,12 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -44,6 +50,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -241,7 +250,9 @@ fun SettingsScreen(
         baseUrl = s.baseUrl
         apiKey = s.apiKey
         model = s.model
-        prompt = s.promptTemplate
+        // 用户切了 UI 语言但 prompt 仍是上一个 locale 的默认值时，自动迁移到当前 locale 默认；
+        // 已定制的 prompt 原样保留。返回值用于本地 state（也已落盘）。
+        prompt = viewModel.migrateDefaultPromptIfStale(context)
         targetLang = s.targetLang
         sourceLang = s.sourceLang
         translatorEngine = s.translatorEngine
@@ -386,6 +397,16 @@ fun SettingsScreen(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+            // —— 应用语言 ——
+            SectionCard(title = stringResource(R.string.settings_section_app_lang), anchorKey = SectionKeys.APP_LANG, onAnchor = onAnchor) {
+                AppLanguageSelector()
+            }
+
+            // —— 主题模式 ——
+            SectionCard(title = stringResource(R.string.settings_section_theme_mode), anchorKey = SectionKeys.THEME_MODE, onAnchor = onAnchor) {
+                ThemeModeSelector()
+            }
+
             // —— 翻译后端 ——
             SectionCard(title = stringResource(R.string.settings_section_translator), anchorKey = SectionKeys.TRANSLATE, onAnchor = onAnchor) {
                 Text(stringResource(R.string.settings_label_translator_engine), style = MaterialTheme.typography.labelLarge)
@@ -402,12 +423,11 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
-                    OutlinedTextField(
+                    SecretTextField(
                         value = apiKey, onValueChange = { apiKey = it },
-                        label = { Text(stringResource(R.string.settings_api_key)) },
-                        placeholder = { Text(stringResource(R.string.settings_api_key_placeholder)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+                        label = stringResource(R.string.settings_api_key),
+                        placeholder = stringResource(R.string.settings_api_key_placeholder),
+                        modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
                         value = model, onValueChange = { model = it },
@@ -417,12 +437,11 @@ fun SettingsScreen(
                         singleLine = true
                     )
                 } else {
-                    OutlinedTextField(
+                    SecretTextField(
                         value = deeplKey, onValueChange = { deeplKey = it },
-                        label = { Text(stringResource(R.string.settings_deepl_api_key)) },
-                        placeholder = { Text(stringResource(R.string.settings_deepl_key_placeholder)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+                        label = stringResource(R.string.settings_deepl_api_key),
+                        placeholder = stringResource(R.string.settings_deepl_key_placeholder),
+                        modifier = Modifier.fillMaxWidth()
                     )
                     SwitchRow(stringResource(R.string.settings_deepl_use_pro), deeplPro) { deeplPro = it }
                     Text(
@@ -545,15 +564,15 @@ fun SettingsScreen(
                 )
 
                 if (ocrEngine == OcrEngineKind.BAIDU) {
-                    OutlinedTextField(
+                    SecretTextField(
                         value = baiduKey, onValueChange = { baiduKey = it },
-                        label = { Text(stringResource(R.string.settings_baidu_api_key)) },
-                        modifier = Modifier.fillMaxWidth(), singleLine = true
+                        label = stringResource(R.string.settings_baidu_api_key),
+                        modifier = Modifier.fillMaxWidth()
                     )
-                    OutlinedTextField(
+                    SecretTextField(
                         value = baiduSecret, onValueChange = { baiduSecret = it },
-                        label = { Text(stringResource(R.string.settings_baidu_secret_key)) },
-                        modifier = Modifier.fillMaxWidth(), singleLine = true
+                        label = stringResource(R.string.settings_baidu_secret_key),
+                        modifier = Modifier.fillMaxWidth()
                     )
                     Text(
                         stringResource(R.string.settings_baidu_endpoint_label),
@@ -578,6 +597,11 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Text(
+                        stringResource(R.string.settings_baidu_image_limit_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
 
                 if (ocrEngine == OcrEngineKind.TENCENT) {
@@ -586,10 +610,10 @@ fun SettingsScreen(
                         label = { Text(stringResource(R.string.settings_tencent_id_label)) },
                         modifier = Modifier.fillMaxWidth(), singleLine = true
                     )
-                    OutlinedTextField(
+                    SecretTextField(
                         value = tencentKey, onValueChange = { tencentKey = it },
-                        label = { Text(stringResource(R.string.settings_tencent_key_label)) },
-                        modifier = Modifier.fillMaxWidth(), singleLine = true
+                        label = stringResource(R.string.settings_tencent_key_label),
+                        modifier = Modifier.fillMaxWidth()
                     )
                     Text(
                         stringResource(R.string.settings_tencent_endpoint_label),
@@ -933,6 +957,8 @@ private object SectionKeys {
     const val OVERLAY = "overlay"
     const val TRIGGER = "trigger"
     const val NETWORK = "network"
+    const val APP_LANG = "app_lang"
+    const val THEME_MODE = "theme_mode"
 }
 
 /**
@@ -993,6 +1019,10 @@ private val SETTING_ITEMS: List<SearchEntry> = listOf(
     SearchEntry(SectionKeys.TRIGGER, R.string.settings_section_trigger, R.string.settings_search_item_a11y_volume, listOf("无障碍", "a11y", "accessibility", "volume", "音量")),
 
     SearchEntry(SectionKeys.NETWORK, R.string.settings_section_network, R.string.settings_search_item_api_timeout, listOf("timeout", "超时", "网络", "network")),
+
+    SearchEntry(SectionKeys.APP_LANG, R.string.settings_section_app_lang, R.string.settings_section_app_lang, listOf("language", "locale", "语言", "中文", "english", "i18n")),
+
+    SearchEntry(SectionKeys.THEME_MODE, R.string.settings_section_theme_mode, R.string.settings_section_theme_mode, listOf("theme", "夜间", "白天", "深色", "浅色", "dark", "light", "night")),
 )
 
 @Composable
@@ -1032,6 +1062,148 @@ private fun SectionCard(
             )
             content()
         }
+    }
+}
+
+@Composable
+private fun SecretTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    placeholder: String? = null,
+) {
+    var visible by remember { mutableStateOf(false) }
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        placeholder = placeholder?.let { p -> { Text(p) } },
+        singleLine = true,
+        modifier = modifier,
+        visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        trailingIcon = {
+            IconButton(onClick = { visible = !visible }) {
+                Icon(
+                    imageVector = if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                    contentDescription = stringResource(
+                        if (visible) R.string.secret_hide else R.string.secret_show
+                    )
+                )
+            }
+        }
+    )
+}
+
+/**
+ * 应用专属语言选项。tag = "" 表示跟随系统；其余是 BCP-47 标签。
+ * 增加新语言时只需在 [APP_LANGUAGE_OPTIONS] 追加一行 + `values-xxx/strings.xml` 提供翻译
+ * + `xml/locales_config.xml` 声明，无需改 UI 代码。
+ */
+private data class AppLanguageOption(
+    val tag: String,
+    @androidx.annotation.StringRes val labelRes: Int
+)
+
+private val APP_LANGUAGE_OPTIONS: List<AppLanguageOption> = listOf(
+    AppLanguageOption("", R.string.settings_app_lang_follow_system),
+    AppLanguageOption("zh-CN", R.string.settings_app_lang_zh),
+    AppLanguageOption("en", R.string.settings_app_lang_en),
+    // 未来扩展：zh-TW（繁中）/ mn（蒙）/ ug（维）等只需在此追加
+)
+
+/**
+ * 应用专属语言切换。基于 [androidx.appcompat.app.AppCompatDelegate] 的 Per-App Languages，
+ * 由系统持久化（LocaleManager），无需我们写本地存储；Android 13+ 切换后 framework 自动
+ * 重建 Activity（[com.gameocr.app.ui.MainActivity] 的 route 用 rememberSaveable 保持）。
+ *
+ * "跟随系统" = 写入空 LocaleListCompat。
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun AppLanguageSelector() {
+    // 归一化系统返回的 BCP-47（"zh-Hans-CN" / "zh" / "en-US" 等）到 options 里精确 tag。
+    fun normalize(raw: String): String {
+        if (raw.isEmpty()) return ""
+        val exact = APP_LANGUAGE_OPTIONS.firstOrNull {
+            it.tag.isNotEmpty() && raw.equals(it.tag, ignoreCase = true)
+        }
+        if (exact != null) return exact.tag
+        val primary = raw.substringBefore('-').lowercase()
+        return APP_LANGUAGE_OPTIONS
+            .firstOrNull { it.tag.startsWith(primary, ignoreCase = true) && it.tag.isNotEmpty() }
+            ?.tag
+            ?: ""
+    }
+
+    val context = LocalContext.current
+    val initial = remember { normalize(com.gameocr.app.data.AppLocalePrefs.read(context)) }
+    var tag by remember { mutableStateOf(initial) }
+    var expanded by remember { mutableStateOf(false) }
+
+    val currentOption = APP_LANGUAGE_OPTIONS.firstOrNull { it.tag == tag } ?: APP_LANGUAGE_OPTIONS.first()
+    val currentLabel = stringResource(currentOption.labelRes)
+
+    val apply: (String) -> Unit = { newTag ->
+        if (newTag != tag) {
+            tag = newTag
+            // 自管持久化：MainActivity.attachBaseContext 会在 recreate 后读 prefs 并包装
+            // Configuration locale，绕开 AppCompatDelegate 在 ComponentActivity 上的持久化不稳问题。
+            com.gameocr.app.data.AppLocalePrefs.write(context, newTag)
+            (context as? android.app.Activity)?.recreate()
+        }
+    }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        OutlinedTextField(
+            value = currentLabel,
+            onValueChange = {},
+            readOnly = true,
+            singleLine = true,
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor()
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            APP_LANGUAGE_OPTIONS.forEach { opt ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(opt.labelRes)) },
+                    onClick = {
+                        expanded = false
+                        apply(opt.tag)
+                    }
+                )
+            }
+        }
+    }
+    Text(
+        stringResource(R.string.settings_app_lang_hint),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+/**
+ * 主题模式（白天 / 夜间 / 跟随系统）。通过 [LocalThemeMode] 直接驱动 Compose 重组，
+ * 不重建 Activity，瞬时生效。持久化由 [ThemeModeController.setMode] 内部完成。
+ */
+@Composable
+private fun ThemeModeSelector() {
+    val controller = com.gameocr.app.ui.theme.LocalThemeMode.current
+    val mode = controller.mode
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        EngineChip(mode, com.gameocr.app.ui.theme.ThemeMode.FOLLOW_SYSTEM, stringResource(R.string.settings_theme_follow_system)) { controller.setMode(it) }
+        EngineChip(mode, com.gameocr.app.ui.theme.ThemeMode.LIGHT, stringResource(R.string.settings_theme_light)) { controller.setMode(it) }
+        EngineChip(mode, com.gameocr.app.ui.theme.ThemeMode.DARK, stringResource(R.string.settings_theme_dark)) { controller.setMode(it) }
     }
 }
 

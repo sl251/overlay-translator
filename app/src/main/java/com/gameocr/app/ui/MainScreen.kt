@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import com.gameocr.app.BuildConfig
 import com.gameocr.app.R
 import com.gameocr.app.capture.CaptureRegion
 import com.gameocr.app.capture.MediaProjectionRequestActivity
@@ -74,6 +75,7 @@ import com.gameocr.app.shizuku.ShizukuCapabilities
 import com.gameocr.app.shizuku.ShizukuManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -113,7 +115,18 @@ fun MainScreen(
                     canDrawOverlay = Settings.canDrawOverlays(context)
                     region = viewModel.currentRegion()
                     shizukuAvail = viewModel.shizukuAvailability(context)
+                    // 国产 ROM 在用户点"允许"后，PowerManager 白名单状态向 caller
+                    // 传播有几百毫秒延迟，ON_RESUME 那一刻常读到旧值。短轮询命中即停。
                     batteryOk = RomHelper.isIgnoringBatteryOptimizations(context)
+                    if (!batteryOk) {
+                        repeat(5) {
+                            delay(200)
+                            if (RomHelper.isIgnoringBatteryOptimizations(context)) {
+                                batteryOk = true
+                                return@launch
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -337,10 +350,51 @@ fun MainScreen(
                 }
             }
 
+            // 关于：放在主屏底部，方便用户一眼看到版本号 / GitHub
+            ActionCard(title = stringResource(R.string.settings_section_about)) {
+                AboutContent()
+            }
+
             // 底部留空
             Box(Modifier.size(24.dp))
         }
     }
+}
+
+private const val GITHUB_URL = "https://github.com/ciddwd/overlay-translator"
+
+@Composable
+private fun AboutContent() {
+    val context = LocalContext.current
+    Text(
+        text = stringResource(R.string.settings_about_tagline),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Text(
+        text = stringResource(R.string.settings_about_version_format, BuildConfig.VERSION_NAME),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Text(
+        text = stringResource(R.string.settings_about_github_label),
+        style = MaterialTheme.typography.labelLarge
+    )
+    Text(
+        text = GITHUB_URL,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.primary
+    )
+    OutlinedButton(
+        onClick = {
+            runCatching {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(GITHUB_URL))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+            }
+        },
+        modifier = Modifier.fillMaxWidth()
+    ) { Text(stringResource(R.string.settings_about_open_github)) }
 }
 
 @Composable

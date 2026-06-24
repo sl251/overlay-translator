@@ -114,6 +114,34 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
+     * 用户切换 UI 语言后，如果当前 promptTemplate 仍是"上一个 locale 的默认 prompt"
+     * （即用户从没改过），把它迁移到当前 locale 的默认。这样英文用户不会看到中文 prompt
+     * 又苦于不知道该点"恢复默认"。已自定义的 prompt 不动。
+     *
+     * 用 [activityContext] 而不是 application context 取 [R.string.default_prompt]：
+     * Activity context 的 Configuration 由 framework 保证跟 LocaleManager 同步，最稳。
+     *
+     * 返回当前应展示的 prompt（迁移后或原值）。
+     */
+    suspend fun migrateDefaultPromptIfStale(activityContext: Context): String {
+        val current = repo.get().promptTemplate
+        val currentDefault = activityContext.getString(R.string.default_prompt)
+        if (current == currentDefault) return current
+
+        // 列出所有已知 locale 下的 default_prompt；当前 prompt 命中任一即视为"未定制"
+        val supportedTags = listOf("zh-CN", "en")
+        val knownDefaults = supportedTags.map { tag ->
+            val cfg = android.content.res.Configuration(activityContext.resources.configuration)
+                .apply { setLocale(java.util.Locale.forLanguageTag(tag)) }
+            activityContext.createConfigurationContext(cfg).getString(R.string.default_prompt)
+        }
+        if (current !in knownDefaults) return current
+
+        repo.update { it.copy(promptTemplate = currentDefault) }
+        return currentDefault
+    }
+
+    /**
      * 切换语言星标。已收藏则移除；未收藏则追加到末尾。立即落盘，绕过 SettingsScreen
      * 的 dirty 检测——星标是用户的小操作，不应该等"保存"按钮。
      */
