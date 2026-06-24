@@ -46,6 +46,7 @@ class OverlayManager(
     private var bannerView: View? = null
     private var blocksView: View? = null
     private var loadingView: View? = null
+    private var errorView: View? = null
     private val blockViews = mutableMapOf<Int, TextView>()
 
     private val overlayType: Int = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -96,6 +97,70 @@ class OverlayManager(
     }
 
     private fun clearLoading() = dismissLoading()
+
+    /**
+     * 错误悬浮提示。国产 ROM（HyperOS / MIUI）对后台 Service 的 Toast 会静默丢弃，
+     * 用户只看到 loading 圈转一下就消失，必须翻日志才知道失败原因。
+     * 这里用 [TYPE_APPLICATION_OVERLAY] 悬浮窗显示一段红底文字，自动定时关闭；
+     * 与 [showLoadingHint] 同链路，全屏游戏沉浸模式下也能可靠显示。
+     */
+    fun showErrorHint(message: String, durationMs: Long = 4500L) {
+        runCatching { errorView?.let { wm.removeView(it) } }
+        errorView = null
+
+        val density = context.resources.displayMetrics.density
+        val padH = (16 * density).toInt()
+        val padV = (12 * density).toInt()
+        val maxW = (context.resources.displayMetrics.widthPixels * 0.92f).toInt()
+
+        val tv = TextView(context).apply {
+            text = message
+            setTextColor(0xFFFFFFFF.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            maxLines = 4
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            maxWidth = maxW
+        }
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = GradientDrawable().apply {
+                cornerRadius = 12f
+                setColor(0xF0B71C1C.toInt())
+            }
+            setPadding(padH, padV, padH, padV)
+            addView(tv)
+        }
+
+        val params = newLayoutParams().apply {
+            width = WindowManager.LayoutParams.WRAP_CONTENT
+            height = WindowManager.LayoutParams.WRAP_CONTENT
+            // 屏幕下方 1/4 处，避开 loading 圈（顶部）与导航栏
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            y = (96 * density).toInt()
+        }
+        runCatching { wm.addView(container, params) }
+        errorView = container
+
+        // 用户点击立即关闭
+        container.setOnClickListener {
+            if (errorView === container) {
+                runCatching { wm.removeView(container) }
+                errorView = null
+            }
+        }
+        // 定时自动关闭
+        container.postDelayed({
+            if (errorView === container) {
+                runCatching { wm.removeView(container) }
+                errorView = null
+            }
+        }, durationMs)
+    }
+
+    fun dismissError() {
+        errorView?.let { runCatching { wm.removeView(it) } }
+        errorView = null
+    }
 
     fun showFullScreen(pairs: List<Pair<String, String>>) {
         clearLoading()
@@ -248,6 +313,7 @@ class OverlayManager(
 
     fun clear() {
         clearLoading()
+        dismissError()
         bannerView?.let { runCatching { wm.removeView(it) } }
         blocksView?.let { runCatching { wm.removeView(it) } }
         bannerView = null

@@ -227,7 +227,9 @@ class CaptureService : Service() {
                 // 之前直接 return，用户只看到圈转一下；现在显式提示。
                 Timber.w("Screenshot capture returned null")
                 logRepository.error(LogRepository.Category.CAPTURE, getString(R.string.log_msg_capture_failed))
-                toast(getString(R.string.toast_capture_failed), long = true)
+                val msg = getString(R.string.toast_capture_failed)
+                toast(msg, long = true)
+                mainScope.launch { overlay?.showErrorHint(msg) }
                 return
             }
             val settings = settingsRepository.get()
@@ -256,10 +258,11 @@ class CaptureService : Service() {
                     t
                 )
                 // 提示给用户：不然只看到 loading 圈转一下就消失，必须翻日志才知道是 OCR 失败。
-                toast(
-                    getString(R.string.toast_ocr_failed_format, settings.ocrEngine.name, shortError(t)),
-                    long = true
-                )
+                // toast 在 HyperOS / MIUI 等 ROM 上对后台 Service 会被静默丢弃，所以同时用
+                // 悬浮窗显示错误条（走 loading 圈同链路，已验证可见）双保险。
+                val msg = getString(R.string.toast_ocr_failed_format, settings.ocrEngine.name, shortError(t))
+                toast(msg, long = true)
+                mainScope.launch { overlay?.showErrorHint(msg) }
                 if (preprocessed !== workBitmap) preprocessed.recycle()
                 workBitmap.recycle()
                 return

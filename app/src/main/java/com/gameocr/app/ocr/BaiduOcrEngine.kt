@@ -116,10 +116,39 @@ class BaiduOcrEngine @Inject constructor(
     }
 
     private fun encodeJpeg(bitmap: Bitmap): String {
-        val out = ByteArrayOutputStream()
-        // 百度文档单图 < 4MB，压到 85 质量即可
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
-        return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+        // 百度限制（错误码 216202 image size error）：
+        // - 最长边 ≤ 4096px / 最短边 ≥ 15px
+        // - base64 后 < 4MB
+        // 用户若开启预处理 2x 上采样，截屏会被放大，容易撞这两条。这里在送出前先做安全缩放：
+        // 1) 等比缩到最长边 ≤ 4096
+        // 2) 循环降低 JPEG 质量直到 base64 ≤ ~3.5MB（留 buffer 给 form 编码开销）
+        // 宽高比 1:4 / 4:1 超出的情况只能让用户调整截屏区（这里无法救）。
+        val maxDim = 4096
+        val maxBase64Bytes = 3_500_000
+
+        var bmp = bitmap
+        var recycleBmp = false
+        val longestSide = maxOf(bmp.width, bmp.height)
+        if (longestSide > maxDim) {
+            val scale = maxDim.toDouble() / longestSide
+            val newW = (bmp.width * scale).toInt().coerceAtLeast(15)
+            val newH = (bmp.height * scale).toInt().coerceAtLeast(15)
+            bmp = Bitmap.createScaledBitmap(bmp, newW, newH, true)
+            recycleBmp = true
+        }
+
+        var quality = 85
+        try {
+            while (true) {
+                val out = ByteArrayOutputStream()
+                bmp.compress(Bitmap.CompressFormat.JPEG, quality, out)
+                val b64 = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+                if (b64.length <= maxBase64Bytes || quality <= 30) return b64
+                quality -= 15
+            }
+        } finally {
+            if (recycleBmp) bmp.recycle()
+        }
     }
 
     override fun close() { /* OkHttp 共享，不在这里关 */ }
