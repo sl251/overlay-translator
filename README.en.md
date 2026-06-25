@@ -27,21 +27,26 @@ No ROOT, fully self-contained, designed for visual novels, manga, game dialogue 
 ## ✨ Features
 
 - **Capture**: MediaProjection + ImageReader (foreground service with `mediaProjection` type, Android 14+ compatible); optional Shizuku path to skip the per-session permission dialog
-- **Trigger**: tap the floating button for one-shot, long-press to toggle loop mode (every 2 s by default, dHash diff skips static frames, an outer ring on the floating ball visualises the countdown); optional accessibility service to bind **Vol+ and Vol- held together for 300 ms** as a global trigger
+- **Trigger**: tap the floating button for one-shot, long-press to toggle loop mode (every 2 s by default, dHash diff skips static frames, **skips a round while the previous overlay is still on screen** to avoid flicker; an outer ring on the floating ball visualises the countdown); optional accessibility service to bind **Vol+ and Vol- held together for 300 ms** as a global trigger
 - **Region selection**: full-screen rubber-band, remembers the last region, avoids OCR noise from the rest of the screen
-- **OCR engines** (router, swap in settings):
-  - ML Kit on-device (Latin / Japanese / Chinese / Korean, AUTO switches by character set)
-  - PaddleOCR PP-OCRv5 mobile (ONNX Runtime, multilingual on-device)
-  - Cloud fallback: Baidu OCR / Tencent OCR (with position + per-language params)
+- **OCR engines** (router, swap in settings; UI grouped **On-device / Cloud**):
+  - On-device: ML Kit (Latin / Japanese / Chinese / Korean, AUTO switches by character set), PaddleOCR PP-OCRv5 mobile (ONNX Runtime)
+  - Cloud: Baidu OCR (5 endpoints) / Tencent OCR (incl. RecognizeAgent LLM-augmented OCR with ParagNo paragraph grouping) / Youdao OCR (ocrapi, single-tap setup)
 - **Source language ↔ OCR linkage**: when you change source language, the app checks whether the current OCR engine can recognize it; if not it recommends a better engine; if you're on cloud OCR with a generic language mode but a precise one is available, it offers an upgrade. The reverse also works: if you change the OCR side, it suggests adjusting source language to match — instead of undoing what you just did.
-- **Translation** (router):
-  - OpenAI-compatible chat completions (DeepSeek / SiliconFlow / Zhipu / Ollama / OpenAI …) with SSE streaming
-  - DeepL (free / Pro auto-detected; Prompt and streaming settings auto-hide when DeepL is selected since they don't apply)
+- **Translation engines** (router + **Test connection** button):
+  - OpenAI-compatible chat completions (DeepSeek / SiliconFlow / Zhipu / Ollama / OpenAI …) with SSE streaming; Test fetches the model list to populate a picker
+  - DeepL (free / Pro auto-detected; Test returns current month's used / total character quota)
+  - **Youdao PicTrans** (ocrtransapi, end-to-end: ships the full screenshot, returns translated regions in one call — **bypasses the OCR engine setting**; auto-rotates box coordinates by orientation)
+  - **Google** (unofficial endpoint, no key required; proxy required inside mainland China)
 - **Overlay**:
   - Two render modes: per OCR boundingBox (glued to source text) / single bottom banner
   - 5 built-in themes (Classic Dark / Amber Gold / Paper Light / Frost Glass / Custom) + font size, opacity, border, offset
-  - Smart collision avoidance with neighbouring OCR boxes; wrap or compact single line
-  - **Merge adjacent OCR boxes** (essential for comics / subtitles): OCR engines often split one sentence into several adjacent boxes; merging them before translation eliminates overlay overlap. Three strengths — **Conservative / Standard / Aggressive** — for different layouts.
+  - Smart collision avoidance with neighbouring OCR boxes; wrap or compact single line (long translations in single-line mode auto-scroll via Marquee instead of "…" truncation)
+  - **Merge adjacent OCR boxes** (essential for comics / subtitles): OCR engines often split one sentence into several adjacent boxes; merging them before translation eliminates overlay overlap
+    - **Orientation detection** (per-box portrait ratio → H/V) + mirrored horizontal/vertical merge
+    - Vertical Japanese: right-to-left column ordering
+    - **Furigana (ふりがな) filtering**: narrow ruby-text columns adjacent to a wider kanji column are dropped to avoid duplicated translation like "shippai / 失败"
+    - Three strengths (Conservative / Standard / Aggressive) for different layouts
   - LRU translation cache, hits skip token cost
 - **Image preprocessing**: 2× upscale, color invert, Otsu binarize (for low-contrast / white-on-dark / colored noise)
 - **The app itself**:
@@ -64,9 +69,11 @@ No ROOT, fully self-contained, designed for visual novels, manga, game dialogue 
 
 <img src="docs/screenshots/overlay-game.png" width="640" alt="In-game overlay" />
 
-**Comic / subtitle scene** — Korean manga bubbles OCR'd by column, Chinese translation glued to source:
+**Comic / subtitle scene** — manga bubbles OCR'd by column, translation glued to source:
 
-<img src="docs/screenshots/overlay-manga.png" width="360" alt="Manga overlay" />
+| Korean manga | Vertical Japanese manga |
+|---|---|
+| <img src="docs/screenshots/overlay-manga.png" width="320" alt="Korean manga overlay" /> | <img src="docs/screenshots/overlay-manga-jp.png" width="320" alt="Vertical Japanese manga overlay" /> |
 
 **Settings**:
 
@@ -102,10 +109,11 @@ Open the app and tap **Settings**. The top of the settings page lets you switch 
 
 | Engine | Good for | Notes |
 |---|---|---|
-| ML Kit (auto / latin / ja / zh) | Default; Japanese / Chinese / Latin | Offline, on-device |
-| PaddleOCR PP-OCRv5 mobile | Multilingual dense text, UI buttons | First use needs ONNX model download — see below |
-| Baidu OCR | Fallback when ML Kit / Paddle miss | Needs API Key + Secret, pay-per-call; image size / aspect-ratio limits |
-| Tencent OCR | Same | Needs SecretId + SecretKey |
+| **On-device** ML Kit (auto / latin / ja / zh / ko) | Default; Japanese / Chinese / Korean / Latin | Offline, on-device |
+| **On-device** PaddleOCR PP-OCRv5 mobile | Multilingual dense text, UI buttons | First use needs ONNX model download — see below |
+| **Cloud** Baidu OCR | Fallback when ML Kit / Paddle miss | Needs API Key + Secret, pay-per-call; 5 endpoints (basic / with-position / accurate / accurate-with-position / web-image); image size / aspect-ratio limits |
+| **Cloud** Tencent OCR | Same | Needs SecretId + SecretKey; 3 endpoints: GeneralBasic / GeneralAccurate / **RecognizeAgent** (LLM agent, integrated with ParagNo paragraph grouping) |
+| **Cloud** Youdao OCR | Simple one-tap | Needs App ID (API Key) + App Secret; `langType` auto-derived from source language, no separate picker |
 
 **PaddleOCR model download**: Settings → "Download PaddleOCR model" pulls the following three files from HuggingFace / hf-mirror into `<filesDir>/models/paddle/`:
 
@@ -134,7 +142,11 @@ You can override the mirror URL in settings, or import the files manually from l
   - Ollama: `qwen2.5:7b`, `llama3.1:8b`
 - **Prompt template**: defaults to a galgame conversational style and is editable. The default prompt follows the UI language: if you never edited it, switching UI language migrates it to the new locale's default; customized prompts are left untouched.
 
-**DeepL**: paste the Auth Key (free tier keys end with `:fx`); the free / pro endpoint is picked automatically.
+**DeepL**: paste the Auth Key (free tier keys end with `:fx`); the free / pro endpoint is picked automatically. **Test connection** also returns this month's used / total character quota.
+
+**Youdao PicTrans** (end-to-end engine): paste one Youdao App ID + App Secret (shared with the OCR side). When selected, CaptureService **bypasses the OCR engine setting** and sends the whole screenshot to `ocrtransapi`, which returns translated regions directly. Box coordinates are auto-rotated by orientation to fix position offsets on rotated images. **Test connection** ships a 2×2 px tiny image and parses errorCode to distinguish key / service / rate-limit issues.
+
+**Google** (unofficial endpoint): no key needed, free. **Proxy required inside mainland China**; Google may rate-limit or change the endpoint at any time — for learning only.
 
 ### Display
 
@@ -157,8 +169,9 @@ You can override the mirror URL in settings, or import the files manually from l
 
 - **M0**: MediaProjection capture + ML Kit + PaddleOCR + OpenAI-compatible translation + floating button + bottom banner
 - **M1**: region persistence, SSE streaming, per-boundingBox overlay rendering, ROM guidance, i18n (zh / en) + Light / Dark theme, in-settings search
-- **M2 (current)**: Korean ML Kit, dual-volume-key global trigger, source-language ↔ OCR linkage, three-strength adjacent box merging, loop progress ring, crash recorder + log screen, GitHub Releases update check, DeepL auto-hides LLM-only knobs
-- **M3**: Shizuku advanced path (UserService + aidl), multi-translator comparison, chat history, TTS, glossaries, Weblate community translation workflow
+- **M2**: Korean ML Kit, dual-volume-key global trigger, source-language ↔ OCR linkage, three-strength adjacent box merging, loop progress ring, crash recorder + log screen, GitHub Releases update check
+- **M3 (current · 0.3.0)**: "Test connection" on all translator engines; Youdao OCR + Youdao PicTrans end-to-end engine; Google translation (unofficial); Tencent RecognizeAgent with ParagNo grouping; OCR merge orientation detection + furigana filtering; Shizuku release fix (R8 keep); loop mode skips when overlay is active; long single-line translations use Marquee scroll
+- **M4**: inpainting-style overlay blending (color sampling + adaptive font size); on-device manga-ocr (kha-white, Japanese manga, reuses PaddleOCR DBNet); custom translation fonts (bundled + user-uploaded .ttf); Shizuku advanced path (UserService + aidl); chat history / TTS / glossaries
 
 ## 🤝 Contributing
 
@@ -266,8 +279,8 @@ Build / debug / release details for contributors. End users only need the APK fr
 ```
 app/src/main/java/com/gameocr/app/
   capture/    Screenshotter interface + MediaProjection / Shizuku impls + region selection + frame diff
-  ocr/        OcrEngine interface + ML Kit / PaddleOCR / Baidu / Tencent + RoutingOcrEngine
-  translate/  Translator interface + OpenAI / DeepL + LRU cache + RoutingTranslator
+  ocr/        OcrEngine interface + ML Kit / PaddleOCR / Baidu / Tencent / Youdao + RoutingOcrEngine (H/V orientation detection, furigana filter, paragraph clustering)
+  translate/  Translator interface + OpenAI / DeepL / Youdao PicTrans (end-to-end) / Google (unofficial) + LRU cache + RoutingTranslator
   overlay/    Floating button + translation / loading / error overlays
   service/    CaptureService foreground service (capture → OCR → translate → render orchestrator)
   trigger/    Accessibility service (optional volume-key trigger)
@@ -379,8 +392,8 @@ Add 4 secrets under **Settings → Secrets and variables → Actions**:
 ```bash
 # 1. Bump versionName / versionCode in app/build.gradle.kts on main
 # 2. Push a tag
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.0
+git push origin v0.3.0
 
 # 3. Watch the Release workflow in the Actions tab
 #    Once green, GameOcr-0.2.0.apk and .sha256 land on the Releases page

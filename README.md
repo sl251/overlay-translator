@@ -27,21 +27,26 @@
 ## ✨ 功能
 
 - **截屏**：MediaProjection + ImageReader（前台服务 `mediaProjection` 类型，Android 14+ 兼容）；可选 Shizuku 路径免每次系统授权弹窗
-- **触发**：悬浮按钮单击触发一次，长按切循环模式（默认 2 秒一次，dHash 帧差跳过静止画面，圆球外圈进度环可视化倒计时）；可选无障碍服务接管 **音量+ 与 音量- 同时按 300ms** 作为全局触发
+- **触发**：悬浮按钮单击触发一次，长按切循环模式（默认 2 秒一次，dHash 帧差跳过静止画面，**overlay 在屏时跳过本轮** 避免重画闪烁；圆球外圈进度环可视化倒计时）；可选无障碍服务接管 **音量+ 与 音量- 同时按 300ms** 作为全局触发
 - **区域选择**：全屏拉框，记忆上次区域，避免 OCR 全屏背景噪声
-- **OCR 引擎**（路由式，按设置切换）：
-  - ML Kit 端侧（拉丁 / 日 / 中 / 韩，AUTO 按字符集命中切换）
-  - PaddleOCR PP-OCRv5 mobile（ONNX Runtime，端侧多语种）
-  - 云端兜底：百度 OCR / 腾讯 OCR（含位置含语种参数）
+- **OCR 引擎**（路由式，按设置切换；UI 按 **端侧 / 云端** 分组）：
+  - 端侧：ML Kit（拉丁 / 日 / 中 / 韩，AUTO 按字符集命中切换）、PaddleOCR PP-OCRv5 mobile（ONNX Runtime）
+  - 云端：百度 OCR（5 个 endpoint）/ 腾讯 OCR（含智能体 RecognizeAgent，按 ParagNo 段落分组合并）/ 有道云 OCR（ocrapi，简单一键）
 - **源语言 ↔ OCR 联动**：你切源语言时，自动检查当前 OCR 引擎能否识别它；不能 → 推荐切到合适引擎；当前云端用着"通用"模式但有精确语种可用 → 推荐升级。反向同理：改 OCR 端时建议把源语言切到匹配值，避免把你刚做的操作"撤销回去"
-- **翻译**（路由式）：
-  - OpenAI 兼容 chat completions（DeepSeek / SiliconFlow / 智谱 / Ollama / OpenAI ……）+ SSE 流式输出
-  - DeepL（免费 / Pro 自动识别；用 DeepL 时自动隐藏与它无关的 Prompt / 流式设置）
+- **翻译引擎**（路由式 + **测试连接** 按钮）：
+  - OpenAI 兼容 chat completions（DeepSeek / SiliconFlow / 智谱 / Ollama / OpenAI ……）+ SSE 流式输出；测试连接顺带拉 model 列表回填可选
+  - DeepL（免费 / Pro 自动识别；测试连接顺带返回当月已用字符 / 总额度）
+  - **有道图翻**（ocrtransapi，端到端：传截图 → 直接拿带 box 的译文，**跳过 OCR 引擎设置**；自动按 orientation 反旋转 box 坐标）
+  - **Google**（非官方端点，无需 key；国内必须代理）
 - **叠加显示**：
   - 两种渲染模式：按 boundingBox 紧贴原文 / 屏幕底部整条横幅
   - 5 种内置主题（经典深色 / 琥珀黑金 / 浅色纸张 / 霜玻璃 / 自定义）+ 字号、透明度、边框、偏移微调
-  - 智能避让相邻 OCR 框，可换行 / 紧凑单行
-  - **合并相邻 box**（漫画 / 字幕场景必备）：OCR 经常把一句话切成几个相邻小 box，合并后整段送翻译可消除译文层互相重叠。提供 **保守 / 标准 / 激进** 三档强度，按场景选
+  - 智能避让相邻 OCR 框，可换行 / 紧凑单行（单行模式长译文自动 Marquee 跑马灯滚动，不再"…"截断）
+  - **合并相邻 box**（漫画 / 字幕场景必备）：OCR 经常把一句话切成几个相邻小 box，合并后整段送翻译可消除译文层互相重叠
+    - **方向探测**（按 box 高宽比中位数判 H/V），横/竖排镜像合并算法
+    - 竖排日漫 right-to-left 列拼接
+    - **振假名（ふりがな）过滤**：紧贴汉字列的注音小列自动丢掉，避免译文出现"しっぱい/失败"重复
+    - 三档强度（保守 / 标准 / 激进），按场景选
   - LRU 翻译缓存，命中跳过 token 消耗
 - **图像预处理**：2× 上采样、反色、Otsu 二值化（针对低对比度 / 暗底白字 / 颜色噪声）
 - **应用本身**：
@@ -64,9 +69,11 @@
 
 <img src="docs/screenshots/overlay-game.png" width="640" alt="游戏内译文叠加" />
 
-**漫画 / 字幕场景** —— 韩文漫画气泡按列识别后中文译文紧贴覆盖：
+**漫画 / 字幕场景** —— 漫画气泡按列识别后译文紧贴覆盖：
 
-<img src="docs/screenshots/overlay-manga.png" width="360" alt="漫画译文叠加" />
+| 韩文漫画 | 日文竖排漫画 |
+|---|---|
+| <img src="docs/screenshots/overlay-manga.png" width="320" alt="韩文漫画译文叠加" /> | <img src="docs/screenshots/overlay-manga-jp.png" width="320" alt="日文竖排漫画译文叠加" /> |
 
 **设置页**：
 
@@ -102,10 +109,11 @@
 
 | 引擎 | 适用场景 | 备注 |
 |---|---|---|
-| ML Kit (auto / latin / ja / zh) | 默认；日文 / 中文 / 拉丁字符 | 无需外网，端侧推理 |
-| PaddleOCR PP-OCRv5 mobile | 多语种密排文字、UI 按钮 | 首次使用需下载 ONNX 模型，见下 |
-| 百度 OCR | ML Kit / Paddle 漏检兜底 | 需 API Key + Secret，按量计费；图片有尺寸 / 宽高比限制 |
-| 腾讯 OCR | 同上 | 需 SecretId + SecretKey |
+| **端侧** ML Kit (auto / latin / ja / zh / ko) | 默认；日文 / 中文 / 韩文 / 拉丁字符 | 无需外网，端侧推理 |
+| **端侧** PaddleOCR PP-OCRv5 mobile | 多语种密排文字、UI 按钮 | 首次使用需下载 ONNX 模型，见下 |
+| **云端** 百度 OCR | ML Kit / Paddle 漏检兜底 | 需 API Key + Secret，按量计费；5 个 endpoint（标准/含位置/高精度/含位置高精度/网络图片）；图片有尺寸 / 宽高比限制 |
+| **云端** 腾讯 OCR | 同上 | 需 SecretId + SecretKey；3 个 endpoint：GeneralBasic / GeneralAccurate / **RecognizeAgent**（LLM 智能体，已对接 ParagNo 段落分组合并） |
+| **云端** 有道云 OCR | 简单一键 | 需 应用 ID（API Key）+ 应用密钥；langType 跟随源语言自动映射，无需独立选择 |
 
 **PaddleOCR 模型下载**：设置 → "下载 PaddleOCR 模型"，自动从 HuggingFace / hf-mirror 镜像拉取以下三个文件到 `<filesDir>/models/paddle/`：
 
@@ -134,7 +142,11 @@
   - Ollama: `qwen2.5:7b`、`llama3.1:8b`
 - **Prompt 模板**：默认 galgame 口语化风格，可自定义。Prompt 跟随 UI 语言：从未改过 prompt 的用户切换 UI 语言时自动迁移到对应 locale 的默认 prompt；已自定义的 prompt 不会被覆盖。
 
-**DeepL**：填 Auth Key（free 版 key 末尾带 `:fx`），自动选择 free / pro endpoint。
+**DeepL**：填 Auth Key（free 版 key 末尾带 `:fx`），自动选择 free / pro endpoint。点 **测试连接** 顺带返回当月已用 / 总字符额度。
+
+**有道图翻**（端到端引擎）：填有道智云一组 应用 ID + 应用密钥（OCR / 图翻共用）。选这个后会 **绕过上方 OCR 引擎设置**，CaptureService 把整张截图发到 `ocrtransapi` 直接拿带 box 的译文。会按图片 orientation 自动反旋转 box 坐标修正位置。**测试连接** 发 2×2 像素小图按 errorCode 精准判 key / 服务 / 限流。
+
+**Google**（非官方端点）：无需 key、免费。**国内必须代理**；谷歌可能随时限流 / 改端点，仅供学习。
 
 ### 显示
 
@@ -157,8 +169,9 @@
 
 - **M0**：MediaProjection 截屏 + ML Kit + PaddleOCR + OpenAI 兼容翻译 + 悬浮按钮 + 底部译文条
 - **M1**：区域选择持久化、SSE 流式译文、按 boundingBox 紧贴原文渲染、ROM 兼容引导、i18n（中英）+ 浅 / 深色主题、设置内搜索
-- **M2（当前）**：韩文 ML Kit、音量双键全局触发、源语言 ↔ OCR 联动智能推荐、合并相邻 box 三档强度、循环模式进度环、闪退记录 + LogScreen、GitHub Releases 升级检测、DeepL 自动隐藏 LLM 专用项
-- **M3**：Shizuku 高级路径完善（UserService + aidl）、多翻译引擎对比、对话历史、TTS、术语表、Weblate 社区翻译流程
+- **M2**：韩文 ML Kit、音量双键全局触发、源语言 ↔ OCR 联动智能推荐、合并相邻 box 三档强度、循环模式进度环、闪退记录 + LogScreen、GitHub Releases 升级检测
+- **M3（当前 · 0.3.0）**：所有翻译引擎"测试连接"按钮；有道云 OCR + 有道图翻端到端引擎；Google 翻译（非官方）；腾讯智能体 RecognizeAgent 按 ParagNo 段落分组；OCR 段落合并方向探测 + 振假名过滤；Shizuku release 包修复（R8 keep）；循环模式 overlay 在屏跳过；长译文 Marquee 跑马灯
+- **M4**：inpainting 视觉融入（取色 + 字号自适应）；manga-ocr 端侧（kha-white，日漫专用，复用 PaddleOCR DBNet）；译文字体自定义（内置 + 用户上传 .ttf）；Shizuku 高级路径（UserService + aidl）；对话历史 / TTS / 术语表
 
 ## 🤝 参与开发
 
@@ -266,8 +279,8 @@ i18n: 翻译相关
 ```
 app/src/main/java/com/gameocr/app/
   capture/    Screenshotter 接口 + MediaProjection / Shizuku 实现 + 区域选择 + 帧差
-  ocr/        OcrEngine 接口 + ML Kit / PaddleOCR / 百度 / 腾讯 + RoutingOcrEngine
-  translate/  Translator 接口 + OpenAI / DeepL + LRU 缓存 + RoutingTranslator
+  ocr/        OcrEngine 接口 + ML Kit / PaddleOCR / 百度 / 腾讯 / 有道云 + RoutingOcrEngine（含 H/V 方向探测、振假名过滤、段落聚类）
+  translate/  Translator 接口 + OpenAI / DeepL / 有道图翻（端到端）/ Google（非官方）+ LRU 缓存 + RoutingTranslator
   overlay/    悬浮按钮 + 译文 / loading / 错误悬浮条
   service/    CaptureService 前台服务（截屏 → OCR → 翻译 → 渲染 主控）
   trigger/    无障碍服务（音量键触发器，可选）
@@ -379,8 +392,8 @@ certutil -encode release.jks release.jks.b64   # Windows
 ```bash
 # 1. 在主分支上把版本号过一遍（app/build.gradle.kts 的 versionName / versionCode）
 # 2. 打 tag 并推上去
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.0
+git push origin v0.3.0
 
 # 3. 在仓库 Actions 页面观察 Release workflow 跑完
 #    成功后到 Releases 页就能看到 GameOcr-0.2.0.apk 和 .sha256

@@ -102,7 +102,22 @@ fun MainScreen(
      // 额度；只有 hasUpdate 时才弹 dialog，已最新 / 失败 静默不打扰。
     // hiltViewModel<UpdateViewModel>() 与 AboutContent 内部那个调用拿到同一实例，dialog 共享 state。
     val updateVm: com.gameocr.app.update.UpdateViewModel = hiltViewModel()
+    val topUpdateState by updateVm.state.collectAsState()
     LaunchedEffect(Unit) { updateVm.autoCheckIfDue() }
+    // dialog 必须挂在 MainScreen 顶层，否则用户没滚到"关于"卡看不到自动检测的弹窗。
+    // 0.3.0 及之前 dialog 只在 AboutContent 内挂载，导致"自动检测确实跑了但用户感觉没反应"。
+    UpdateResultDialog(
+        state = topUpdateState,
+        onDismiss = { updateVm.reset() },
+        onOpenRelease = { url ->
+            runCatching {
+                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+            }
+            updateVm.reset()
+        }
+    )
 
     // Shizuku 就绪时默认选 Shizuku（用户未手动切换过的前提下）。
     // 进入页面时 shizukuAvail 还在初始 NOT_INSTALLED，等 ON_RESUME 探测完才真实；
@@ -441,18 +456,8 @@ private fun AboutContent() {
         )
     }
 
-    UpdateResultDialog(
-        state = updateState,
-        onDismiss = { updateVm.reset() },
-        onOpenRelease = { url ->
-            runCatching {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(intent)
-            }
-            updateVm.reset()
-        }
-    )
+    // 注意：UpdateResultDialog 已提到 MainScreen 顶层（避免自动检测弹窗被关于卡折叠遮住），
+    // 这里不再重复挂——同一 ViewModel state，顶层 dialog 也响应"检查更新"按钮触发的 check()。
 }
 
 @Composable
