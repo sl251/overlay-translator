@@ -112,6 +112,84 @@ class OpenAiTranslator @Inject constructor(
         if (acc.isNotEmpty()) cache.put(cacheKey, acc.toString())
     }.flowOn(Dispatchers.IO)
 
+    /**
+     * 测试连通性：优先 `GET ${baseUrl}models` 拉 model 列表（多数 OpenAI 兼容厂商都提供，
+     * 且不消耗 token / 配额），成功就把 model id 列表回给 UI 当下拉候选。失败则降级发一次
+     * 最小 chat completions 当探活（max_tokens=1，"ping"）。
+     */
+    override suspend fun testConnection(settings: Settings): TestResult {
+        if (settings.apiKey.isBlank()) {
+            return TestResult(false, appContext.getString(R.string.err_openai_no_api_key))
+        }
+        val timedClient = client.withApiTimeout(settings.apiTimeoutSeconds)
+        val modelsUrl = ensureSlash(settings.baseUrl) + "models"
+        val modelsReq = Request.Builder()
+            .url(modelsUrl)
+            .header("Authorization", "Bearer ${settings.apiKey}")
+            .header("Accept", "application/json")
+            .get()
+            .build()
+        val modelsResult = runCatching {
+            withContext(Dispatchers.IO) {
+                timedClient.newCall(modelsReq).execute().use { resp ->
+                    if (!resp.isSuccessful) return@use null
+                    val raw = resp.body?.string().orEmpty()
+                    runCatching { json.decodeFromString<ModelsResponse>(raw) }
+                        .getOrNull()
+                        ?.data
+                        ?.mapNotNull { it.id }
+                        ?.distinct()
+                        ?.sorted()
+                }
+            }
+        }.getOrNull()
+        if (!modelsResult.isNullOrEmpty()) {
+            return TestResult(
+                true,
+                appContext.getString(R.string.settings_test_ok_openai_models_format, modelsResult.size),
+                models = modelsResult
+            )
+        }
+        // 降级：发一次 max_tokens=1 的最小 chat completions。能跑通说明 baseUrl/key/model 都对。
+        return runCatching {
+            val body = ChatRequest(
+                model = settings.model,
+                messages = listOf(ChatMessage(role = "user", content = "ping")),
+                temperature = 0.0,
+                stream = false,
+                maxTokens = 1
+            )
+            val payload = json.encodeToString(body)
+            val chatReq = Request.Builder()
+                .url(ensureSlash(settings.baseUrl) + "chat/completions")
+                .header("Authorization", "Bearer ${settings.apiKey}")
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .post(payload.toRequestBody("application/json".toMediaType()))
+                .build()
+            val start = System.currentTimeMillis()
+            withContext(Dispatchers.IO) {
+                timedClient.newCall(chatReq).execute().use { resp ->
+                    val raw = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) {
+                        return@use TestResult(false, "HTTP ${resp.code}: ${raw.take(200)}")
+                    }
+                    val latency = System.currentTimeMillis() - start
+                    TestResult(
+                        true,
+                        appContext.getString(
+                            R.string.settings_test_ok_openai_chat_format,
+                            settings.model,
+                            latency.toInt()
+                        )
+                    )
+                }
+            }
+        }.getOrElse { e ->
+            TestResult(false, e.message ?: e.javaClass.simpleName)
+        }
+    }
+
     private fun validate(settings: Settings) {
         if (settings.apiKey.isBlank()) {
             throw TranslationException(appContext.getString(R.string.err_openai_no_api_key))

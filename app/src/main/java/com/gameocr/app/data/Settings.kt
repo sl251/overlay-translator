@@ -61,6 +61,9 @@ data class Settings(
     val translatorEngine: TranslatorEngine = TranslatorEngine.OPENAI,
     val deeplApiKey: String = "",
     val deeplPro: Boolean = false,
+    /** 有道智云一套 AppKey/Secret，OCR (ocrapi) 与图片翻译 (ocrtransapi) 共用。 */
+    val youdaoAppKey: String = "",
+    val youdaoAppSecret: String = "",
     /** 悬浮按钮直径（dp）。 */
     val floatingButtonSizeDp: Int = 40,
     /** 译文允许换行（关闭后强制单行，可能横向溢出但更紧凑）。 */
@@ -126,7 +129,16 @@ enum class TranslatorEngine {
     /** OpenAI 兼容 LLM（DeepSeek / SiliconFlow / GPT / 自架 Ollama 等）。 */
     OPENAI,
     /** DeepL 翻译 API（专业翻译质量，对日/英/中等 30+ 语言对）。 */
-    DEEPL
+    DEEPL,
+    /**
+     * 有道智云图片翻译（ocrtransapi）。**端到端引擎**：传整张截图，直接拿回带 box 的译文，
+     * 无需先调 OCR 引擎。选中后 CaptureService 会跳过 [Settings.ocrEngine]。
+     */
+    YOUDAO_PICTRANS,
+    /**
+     * Google 翻译（非官方端点，无需 key）。谷歌可能随时限流 / 改端点 / 拒绝。国内需代理。
+     */
+    GOOGLE
 }
 
 /** 常用目标语言预设（也允许 settings.targetLang 自由填）。 */
@@ -308,6 +320,7 @@ enum class OcrEngineKind {
     ML_KIT_KOREAN,    // ML Kit 韩文识别器（端侧、~20MB 模型按需下载）
     BAIDU,            // 百度通用文字识别（云端，需要 API Key + Secret）
     TENCENT,          // 腾讯云 GeneralBasicOCR（云端，需要 SecretId + SecretKey）
+    YOUDAO,           // 有道智云通用文字识别 ocrapi（云端，需要 AppKey + AppSecret）
     PADDLE_ONNX       // PaddleOCR PP-OCRv5 mobile (ONNX Runtime 端侧，按需下载模型)
 }
 

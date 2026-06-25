@@ -12,6 +12,8 @@ import com.gameocr.app.data.Settings
 import com.gameocr.app.data.SettingsRepository
 import com.gameocr.app.data.TranslatorEngine
 import com.gameocr.app.ocr.PaddleModelInstaller
+import com.gameocr.app.translate.RoutingTranslator
+import com.gameocr.app.translate.TestResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -21,7 +23,8 @@ import kotlinx.coroutines.flow.collect
 class SettingsViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val repo: SettingsRepository,
-    private val paddleInstaller: PaddleModelInstaller
+    private val paddleInstaller: PaddleModelInstaller,
+    private val routingTranslator: RoutingTranslator
 ) : ViewModel() {
 
     suspend fun load(): Settings = repo.get()
@@ -67,7 +70,9 @@ class SettingsViewModel @Inject constructor(
         translatorEngine: TranslatorEngine,
         deeplKey: String,
         deeplPro: Boolean,
-        paddleMirror: String
+        paddleMirror: String,
+        youdaoAppKey: String,
+        youdaoAppSecret: String
     ) {
         repo.update {
             it.copy(
@@ -110,7 +115,9 @@ class SettingsViewModel @Inject constructor(
                 translatorEngine = translatorEngine,
                 deeplApiKey = deeplKey.trim(),
                 deeplPro = deeplPro,
-                paddleModelMirrorUrl = paddleMirror.trim()
+                paddleModelMirrorUrl = paddleMirror.trim(),
+                youdaoAppKey = youdaoAppKey.trim(),
+                youdaoAppSecret = youdaoAppSecret.trim()
             )
         }
     }
@@ -204,4 +211,35 @@ class SettingsViewModel @Inject constructor(
 
     suspend fun importPaddleFromLocal(uris: List<android.net.Uri>): Int =
         paddleInstaller.importFromLocal(uris)
+
+    /**
+     * 测试当前 UI 上未保存的翻译引擎配置是否可用。基于已存档的 Settings，把用户在设置页
+     * 改但未保存的几个字段（baseUrl/key/model/deeplKey/deeplPro/engine/timeout）覆盖进去，
+     * 避免要求用户必须先点"保存"才能测。
+     */
+    suspend fun testTranslator(
+        translatorEngine: TranslatorEngine,
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        deeplKey: String,
+        deeplPro: Boolean,
+        youdaoAppKey: String,
+        youdaoAppSecret: String,
+        apiTimeoutSeconds: Int
+    ): TestResult {
+        val base = repo.get()
+        val temp = base.copy(
+            translatorEngine = translatorEngine,
+            baseUrl = baseUrl.trim(),
+            apiKey = apiKey.trim(),
+            model = model.trim(),
+            deeplApiKey = deeplKey.trim(),
+            deeplPro = deeplPro,
+            youdaoAppKey = youdaoAppKey.trim(),
+            youdaoAppSecret = youdaoAppSecret.trim(),
+            apiTimeoutSeconds = apiTimeoutSeconds.coerceIn(5, 300)
+        )
+        return routingTranslator.testConnection(temp)
+    }
 }

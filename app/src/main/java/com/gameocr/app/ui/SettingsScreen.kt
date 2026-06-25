@@ -20,6 +20,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
@@ -100,7 +102,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     modifier: Modifier = Modifier,
@@ -119,6 +121,16 @@ fun SettingsScreen(
     var translatorEngine by remember { mutableStateOf(TranslatorEngine.OPENAI) }
     var deeplKey by remember { mutableStateOf("") }
     var deeplPro by remember { mutableStateOf(false) }
+    // 有道智云一套 key（OCR + 图片翻译共用）
+    var youdaoAppKey by remember { mutableStateOf("") }
+    var youdaoAppSecret by remember { mutableStateOf("") }
+    // 翻译引擎"测试连接"按钮的瞬时状态：testing / 结果文字 / 成功色 / OpenAI 拉到的 model 列表。
+    // 不进 Settings，纯 UI 状态；切换 engine 不清空（用户切回去还能看到上次的结果）。
+    var testRunning by remember { mutableStateOf(false) }
+    var testMessage by remember { mutableStateOf<String?>(null) }
+    var testSuccess by remember { mutableStateOf(false) }
+    var fetchedModels by remember { mutableStateOf<List<String>>(emptyList()) }
+    var modelPickerExpanded by remember { mutableStateOf(false) }
     var textSize by remember { mutableStateOf(14f) }
     var alpha by remember { mutableStateOf(0.85f) }
     var loopInterval by remember { mutableStateOf("1000") }
@@ -213,6 +225,8 @@ fun SettingsScreen(
         translatorEngine = translatorEngine,
         deeplApiKey = deeplKey,
         deeplPro = deeplPro,
+        youdaoAppKey = youdaoAppKey,
+        youdaoAppSecret = youdaoAppSecret,
         floatingButtonSizeDp = floatingSize.toInt(),
         overlayAllowWrap = allowWrap,
         overlayAvoidCollision = avoidCollision,
@@ -255,7 +269,9 @@ fun SettingsScreen(
             translatorEngine = translatorEngine,
             deeplKey = deeplKey,
             deeplPro = deeplPro,
-            paddleMirror = paddleMirror
+            paddleMirror = paddleMirror,
+            youdaoAppKey = youdaoAppKey,
+            youdaoAppSecret = youdaoAppSecret
         )
     }
 
@@ -579,6 +595,8 @@ fun SettingsScreen(
             sourceLang = s.sourceLang
             translatorEngine = s.translatorEngine
             deeplKey = s.deeplApiKey
+            youdaoAppKey = s.youdaoAppKey
+            youdaoAppSecret = s.youdaoAppSecret
             deeplPro = s.deeplPro
             textSize = s.overlayTextSizeSp.toFloat()
             alpha = s.overlayAlpha
@@ -727,9 +745,22 @@ fun SettingsScreen(
             // —— 翻译后端 ——
             SectionCard(title = stringResource(R.string.settings_section_translator), anchorKey = SectionKeys.TRANSLATE, onAnchor = onAnchor) {
                 Text(stringResource(R.string.settings_label_translator_engine), style = MaterialTheme.typography.labelLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     EngineChip(translatorEngine, TranslatorEngine.OPENAI, stringResource(R.string.settings_engine_openai_llm)) { translatorEngine = it }
                     EngineChip(translatorEngine, TranslatorEngine.DEEPL, stringResource(R.string.settings_engine_deepl)) { translatorEngine = it }
+                    EngineChip(translatorEngine, TranslatorEngine.YOUDAO_PICTRANS, stringResource(R.string.settings_engine_youdao_pictrans)) { translatorEngine = it }
+                    EngineChip(translatorEngine, TranslatorEngine.GOOGLE, stringResource(R.string.settings_engine_google)) { translatorEngine = it }
+                }
+                // 切换引擎时清掉上一引擎的测试结果——继续显示会让用户以为新引擎"已经测过"。
+                LaunchedEffect(translatorEngine) {
+                    testMessage = null
+                    testSuccess = false
+                    fetchedModels = emptyList()
+                    modelPickerExpanded = false
                 }
 
                 if (translatorEngine == TranslatorEngine.OPENAI) {
@@ -753,7 +784,38 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
-                } else {
+                    // 测试连接成功时，下面这块允许从拉到的 model 列表里选一个回填到 model 字段。
+                    if (fetchedModels.isNotEmpty()) {
+                        ExposedDropdownMenuBox(
+                            expanded = modelPickerExpanded,
+                            onExpandedChange = { modelPickerExpanded = !modelPickerExpanded }
+                        ) {
+                            OutlinedTextField(
+                                value = "",
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text(stringResource(R.string.settings_test_pick_model)) },
+                                placeholder = { Text("${fetchedModels.size} models") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelPickerExpanded) },
+                                modifier = Modifier.menuAnchor().fillMaxWidth()
+                            )
+                            ExposedDropdownMenu(
+                                expanded = modelPickerExpanded,
+                                onDismissRequest = { modelPickerExpanded = false }
+                            ) {
+                                fetchedModels.forEach { id ->
+                                    DropdownMenuItem(
+                                        text = { Text(id) },
+                                        onClick = {
+                                            model = id
+                                            modelPickerExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else if (translatorEngine == TranslatorEngine.DEEPL) {
                     SecretTextField(
                         value = deeplKey, onValueChange = { deeplKey = it },
                         label = stringResource(R.string.settings_deepl_api_key),
@@ -765,6 +827,86 @@ fun SettingsScreen(
                         stringResource(R.string.settings_deepl_tip),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else if (translatorEngine == TranslatorEngine.YOUDAO_PICTRANS) {
+                    // YOUDAO_PICTRANS：端到端引擎，OCR + 翻译一起出，会绕过 ocrEngine 设置
+                    SecretTextField(
+                        value = youdaoAppKey, onValueChange = { youdaoAppKey = it },
+                        label = stringResource(R.string.settings_youdao_app_key),
+                        placeholder = stringResource(R.string.settings_youdao_app_key_placeholder),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    SecretTextField(
+                        value = youdaoAppSecret, onValueChange = { youdaoAppSecret = it },
+                        label = stringResource(R.string.settings_youdao_app_secret),
+                        placeholder = stringResource(R.string.settings_youdao_app_secret_placeholder),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        stringResource(R.string.settings_youdao_pictrans_tip),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    // GOOGLE：无 key，仅提示风险
+                    Text(
+                        stringResource(R.string.settings_google_tip),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+
+                // —— 测试连接 ——
+                // 验证 baseUrl/key/model（或 DeepL key/endpoint）能不能用；DeepL 顺便返回剩余额度，
+                // OpenAI 顺便拉 model 列表回填到上方下拉。状态文字按成功/失败着色，下次点击覆盖。
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        enabled = !testRunning,
+                        onClick = {
+                            testRunning = true
+                            testMessage = null
+                            scope.launch {
+                                val result = viewModel.testTranslator(
+                                    translatorEngine = translatorEngine,
+                                    baseUrl = baseUrl,
+                                    apiKey = apiKey,
+                                    model = model,
+                                    deeplKey = deeplKey,
+                                    deeplPro = deeplPro,
+                                    youdaoAppKey = youdaoAppKey,
+                                    youdaoAppSecret = youdaoAppSecret,
+                                    apiTimeoutSeconds = apiTimeoutSec.toInt()
+                                )
+                                testRunning = false
+                                testSuccess = result.success
+                                testMessage = result.message
+                                if (result.success && result.models.isNotEmpty()) {
+                                    fetchedModels = result.models
+                                }
+                            }
+                        }
+                    ) {
+                        Text(
+                            if (testRunning) stringResource(R.string.settings_test_testing)
+                            else stringResource(R.string.settings_test_connection)
+                        )
+                    }
+                    if (testRunning) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                    }
+                }
+                testMessage?.let { msg ->
+                    Text(
+                        msg,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (testSuccess) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.error
                     )
                 }
                 val onTogglePin: (String) -> Unit = { code ->
@@ -863,24 +1005,53 @@ fun SettingsScreen(
             }
 
             // —— OCR 引擎 ——
+            // 端到端翻译引擎（有道图翻）会跳过 OCR 阶段，整个 OCR 设置区当前会被无视——
+            // 灰显 + 禁用 chip 让用户一眼明白 + 不能误操作。
+            val ocrSectionDisabled = translatorEngine == TranslatorEngine.YOUDAO_PICTRANS
             SectionCard(title = stringResource(R.string.settings_section_ocr), anchorKey = SectionKeys.OCR, onAnchor = onAnchor) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    EngineChip(ocrEngine, OcrEngineKind.ML_KIT_AUTO, stringResource(R.string.settings_ocr_chip_auto)) { ocrEngine = it }
-                    EngineChip(ocrEngine, OcrEngineKind.ML_KIT_JAPANESE, stringResource(R.string.settings_ocr_chip_japanese)) { ocrEngine = it }
-                    EngineChip(ocrEngine, OcrEngineKind.ML_KIT_KOREAN, stringResource(R.string.settings_ocr_chip_korean)) { ocrEngine = it }
-                    EngineChip(ocrEngine, OcrEngineKind.ML_KIT_CHINESE, stringResource(R.string.settings_ocr_chip_chinese)) { ocrEngine = it }
+                if (ocrSectionDisabled) {
+                    Text(
+                        stringResource(R.string.settings_ocr_disabled_by_pictrans),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
-                Row(
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.alpha(if (ocrSectionDisabled) 0.5f else 1f)
+                ) {
+                // 分组改成 端侧 / 云端 两组 FlowRow——chip 多了 Row 横向溢出会挤掉末尾的 chip
+                // （Paddle 之前就被挤没了）。FlowRow 自适应换行不丢任何 chip。
+                Text(
+                    stringResource(R.string.settings_ocr_group_local),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    EngineChip(ocrEngine, OcrEngineKind.ML_KIT_LATIN, stringResource(R.string.settings_ocr_chip_latin)) { ocrEngine = it }
-                    EngineChip(ocrEngine, OcrEngineKind.BAIDU, stringResource(R.string.settings_ocr_chip_baidu)) { ocrEngine = it }
-                    EngineChip(ocrEngine, OcrEngineKind.TENCENT, stringResource(R.string.settings_ocr_chip_tencent)) { ocrEngine = it }
-                    EngineChip(ocrEngine, OcrEngineKind.PADDLE_ONNX, stringResource(R.string.settings_ocr_chip_paddle)) { ocrEngine = it }
+                    EngineChip(ocrEngine, OcrEngineKind.ML_KIT_AUTO, stringResource(R.string.settings_ocr_chip_auto), enabled = !ocrSectionDisabled) { ocrEngine = it }
+                    EngineChip(ocrEngine, OcrEngineKind.ML_KIT_JAPANESE, stringResource(R.string.settings_ocr_chip_japanese), enabled = !ocrSectionDisabled) { ocrEngine = it }
+                    EngineChip(ocrEngine, OcrEngineKind.ML_KIT_KOREAN, stringResource(R.string.settings_ocr_chip_korean), enabled = !ocrSectionDisabled) { ocrEngine = it }
+                    EngineChip(ocrEngine, OcrEngineKind.ML_KIT_CHINESE, stringResource(R.string.settings_ocr_chip_chinese), enabled = !ocrSectionDisabled) { ocrEngine = it }
+                    EngineChip(ocrEngine, OcrEngineKind.ML_KIT_LATIN, stringResource(R.string.settings_ocr_chip_latin), enabled = !ocrSectionDisabled) { ocrEngine = it }
+                    EngineChip(ocrEngine, OcrEngineKind.PADDLE_ONNX, stringResource(R.string.settings_ocr_chip_paddle), enabled = !ocrSectionDisabled) { ocrEngine = it }
+                }
+                Text(
+                    stringResource(R.string.settings_ocr_group_cloud),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    EngineChip(ocrEngine, OcrEngineKind.BAIDU, stringResource(R.string.settings_ocr_chip_baidu), enabled = !ocrSectionDisabled) { ocrEngine = it }
+                    EngineChip(ocrEngine, OcrEngineKind.TENCENT, stringResource(R.string.settings_ocr_chip_tencent), enabled = !ocrSectionDisabled) { ocrEngine = it }
+                    EngineChip(ocrEngine, OcrEngineKind.YOUDAO, stringResource(R.string.settings_ocr_chip_youdao), enabled = !ocrSectionDisabled) { ocrEngine = it }
                 }
 
                 // 各引擎用途说明：用户经常问"自动/日文/中文/拉丁"的差别
@@ -1004,6 +1175,26 @@ fun SettingsScreen(
                     )
                 }
 
+                if (ocrEngine == OcrEngineKind.YOUDAO) {
+                    SecretTextField(
+                        value = youdaoAppKey, onValueChange = { youdaoAppKey = it },
+                        label = stringResource(R.string.settings_youdao_app_key),
+                        placeholder = stringResource(R.string.settings_youdao_app_key_placeholder),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    SecretTextField(
+                        value = youdaoAppSecret, onValueChange = { youdaoAppSecret = it },
+                        label = stringResource(R.string.settings_youdao_app_secret),
+                        placeholder = stringResource(R.string.settings_youdao_app_secret_placeholder),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        stringResource(R.string.settings_youdao_tip),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 if (ocrEngine == OcrEngineKind.PADDLE_ONNX) {
                     PaddleSection(
                         status = paddleStatus,
@@ -1049,6 +1240,7 @@ fun SettingsScreen(
                         }
                     )
                 }
+                } // 关闭 OCR section 内的"灰显 Column"（ocrSectionDisabled 控制 alpha）
             }
 
             // —— 图像预处理 ——
@@ -1627,11 +1819,18 @@ private fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
 }
 
 @Composable
-private fun <T> EngineChip(current: T, target: T, label: String, onSelect: (T) -> Unit) {
+private fun <T> EngineChip(
+    current: T,
+    target: T,
+    label: String,
+    enabled: Boolean = true,
+    onSelect: (T) -> Unit
+) {
     FilterChip(
         selected = current == target,
         onClick = { onSelect(target) },
-        label = { Text(label) }
+        label = { Text(label) },
+        enabled = enabled
     )
 }
 
@@ -1645,6 +1844,7 @@ private fun ocrEngineLabelRes(engine: com.gameocr.app.data.OcrEngineKind): Int =
     com.gameocr.app.data.OcrEngineKind.ML_KIT_CHINESE -> R.string.settings_ocr_chip_chinese
     com.gameocr.app.data.OcrEngineKind.BAIDU -> R.string.settings_ocr_chip_baidu
     com.gameocr.app.data.OcrEngineKind.TENCENT -> R.string.settings_ocr_chip_tencent
+    com.gameocr.app.data.OcrEngineKind.YOUDAO -> R.string.settings_ocr_chip_youdao
     com.gameocr.app.data.OcrEngineKind.PADDLE_ONNX -> R.string.settings_ocr_chip_paddle
 }
 

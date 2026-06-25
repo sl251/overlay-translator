@@ -160,6 +160,15 @@
     <string name="settings_label_translator_engine">翻译引擎</string>
     <string name="settings_engine_openai_llm">OpenAI 兼容 LLM</string>
     <string name="settings_engine_deepl">DeepL</string>
+    <string name="settings_engine_youdao_pictrans">有道图翻</string>
+    <string name="settings_engine_google">Google</string>
+    <string name="settings_google_tip">无需配置，谷歌可能随时限流 / 改端点，仅供学习。国内必须代理。</string>
+    <string name="settings_youdao_app_key">有道 应用 ID（API Key）</string>
+    <string name="settings_youdao_app_secret">有道 应用密钥（App Secret）</string>
+    <string name="settings_youdao_app_key_placeholder">控制台「应用管理」→ 应用 ID</string>
+    <string name="settings_youdao_app_secret_placeholder">同一应用的「应用密钥」，妥善保存</string>
+    <string name="settings_youdao_tip">通用文字识别 OCR：按字符量计费，控制台可申请试用额度。</string>
+    <string name="settings_youdao_pictrans_tip">图片翻译为端到端引擎，整张图直接出译文 + 位置，会**绕过上方 OCR 引擎设置**。按调用计费。</string>
     <string name="settings_base_url_placeholder">https://api.siliconflow.cn/v1/  /  https://api.deepseek.com/v1/</string>
     <string name="settings_api_key_placeholder">sk-...</string>
     <string name="settings_model_placeholder">deepseek-v4-flash / gpt-4o-mini / glm-4-flash</string>
@@ -167,6 +176,16 @@
     <string name="settings_deepl_key_placeholder">Free 版末尾带 :fx，Pro 版没有</string>
     <string name="settings_deepl_use_pro">使用 Pro 版端点 (api.deepl.com)</string>
     <string name="settings_deepl_tip">提示：Free 版每月 50 万字符免费，注册见 https://www.deepl.com/pro-api。DeepL 不支持流式，会一次性输出。中文（繁体）需要 Pro 版。</string>
+
+    <!-- 翻译引擎连接测试 -->
+    <string name="settings_test_connection">测试连接</string>
+    <string name="settings_test_testing">测试中…</string>
+    <string name="settings_test_ok_deepl_format">OK · 已用 %1$s / %2$s 字符（剩 %3$d%%）</string>
+    <string name="settings_test_ok_openai_models_format">OK · 拉到 %1$d 个 model（下方可点选）</string>
+    <string name="settings_test_ok_openai_chat_format">OK · model=%1$s · %2$d ms</string>
+    <string name="settings_test_deepl_403_hint">检查 Free/Pro 端点开关是否与 Key 匹配</string>
+    <string name="settings_test_pick_model">从列表选择 model</string>
+
     <string name="settings_prompt_label">Prompt 模板（{source} {target} 会被替换）</string>
     <string name="settings_prompt_warn_missing_format">当前 prompt 未使用 %1$s 占位符，切换语言时 prompt 文本不会跟随变化。</string>
     <string name="settings_prompt_warn_hint_format">提示：实际翻译会通过附加规则强制目标语言为「%1$s」，不会输出错误语言。</string>
@@ -180,6 +199,10 @@
     <string name="settings_ocr_chip_latin">拉丁字母</string>
     <string name="settings_ocr_chip_baidu">百度云</string>
     <string name="settings_ocr_chip_tencent">腾讯云</string>
+    <string name="settings_ocr_chip_youdao">有道云</string>
+    <string name="settings_ocr_group_local">端侧（无网，按需下载模型）</string>
+    <string name="settings_ocr_group_cloud">云端（需 API Key，按量计费）</string>
+    <string name="settings_ocr_disabled_by_pictrans">已选「有道图翻」端到端引擎，OCR + 翻译由它一并完成，下方 OCR 引擎设置不生效。</string>
     <string name="settings_ocr_chip_paddle">PaddleOCR</string>
     <string name="settings_ocr_intro">选择 OCR 引擎，决定识别哪种文字：\n• 自动 / 日文 / 韩文 / 中文 / 拉丁：Google ML Kit 端侧（免费、离线）。\"自动\"按谚文 / 假名命中切换识别器；如果你确定原文是某种语言，固定选对应项能略提精度\n• PaddleOCR：端侧多语种识别，复杂排版更稳，首次使用要下载 ~20MB 模型（暂不含韩文字典，韩文请用 ML Kit 或云端）\n• 百度云 / 腾讯云：云端 OCR，需 API Key 按量计费；展开后可在「识别语种」里切到韩 / 日等小语种作为漏检兜底</string>
     <string name="settings_baidu_api_key">百度 API Key</string>

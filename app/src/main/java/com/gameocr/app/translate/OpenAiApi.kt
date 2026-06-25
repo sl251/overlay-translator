@@ -51,3 +51,14 @@ internal data class ChatStreamDelta(
     val role: String? = null,
     val content: String? = null
 )
+
+/** `GET /v1/models` 响应。Ollama / vLLM / OpenAI / DeepSeek 全部用这个 schema。 */
+@Serializable
+internal data class ModelsResponse(
+    val data: List<ModelInfo> = emptyList()
+)
+
+@Serializable
+internal data class ModelInfo(
+    val id: String? = null
+)

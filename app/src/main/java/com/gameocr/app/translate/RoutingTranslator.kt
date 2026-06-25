@@ -1,16 +1,20 @@
 package com.gameocr.app.translate
 
+import android.graphics.Bitmap
 import com.gameocr.app.data.Settings
 import com.gameocr.app.data.TranslatorEngine
+import com.gameocr.app.ocr.TextBlock
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 
-/** 按 [Settings.translatorEngine] 路由到 OpenAI 兼容 或 DeepL。 */
+/** 按 [Settings.translatorEngine] 路由到 OpenAI 兼容 / DeepL / 有道图片翻译。 */
 @Singleton
 class RoutingTranslator @Inject constructor(
     private val openAi: OpenAiTranslator,
-    private val deepl: DeepLTranslator
+    private val deepl: DeepLTranslator,
+    private val youdaoPicTrans: YoudaoPicTransTranslator,
+    private val google: GoogleTranslator
 ) : Translator {
     override suspend fun translate(source: String, settings: Settings): String? =
         engineFor(settings).translate(source, settings)
@@ -27,8 +31,23 @@ class RoutingTranslator @Inject constructor(
     override suspend fun translateBatch(sources: List<String>, settings: Settings): List<String?> =
         engineFor(settings).translateBatch(sources, settings)
 
+    override suspend fun testConnection(settings: Settings): TestResult =
+        engineFor(settings).testConnection(settings)
+
+    override val isEndToEnd: Boolean get() = false
+    /** RoutingTranslator 的 isEndToEnd 不能静态判，调用方应用 [isEndToEndFor]。 */
+    fun isEndToEndFor(settings: Settings): Boolean = engineFor(settings).isEndToEnd
+
+    override suspend fun ocrAndTranslate(
+        bitmap: Bitmap,
+        settings: Settings
+    ): List<Pair<TextBlock, String>> =
+        engineFor(settings).ocrAndTranslate(bitmap, settings)
+
     private fun engineFor(settings: Settings): Translator = when (settings.translatorEngine) {
         TranslatorEngine.OPENAI -> openAi
         TranslatorEngine.DEEPL -> deepl
+        TranslatorEngine.YOUDAO_PICTRANS -> youdaoPicTrans
+        TranslatorEngine.GOOGLE -> google
     }
 }

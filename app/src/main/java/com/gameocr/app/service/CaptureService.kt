@@ -241,6 +241,12 @@ class CaptureService : Service() {
     private suspend fun captureOnce() {
         if (!captureLock.tryLock()) return
         try {
+            // 循环模式优化：上一帧译文 box 还挂在屏幕上（用户没点掉/未手动 clear），
+            // 先别打扰；本轮不截屏、不 OCR、不翻译，等用户消化完上一帧再走下一帧。
+            // 这对漫画 / 视频字幕场景特别重要——避免每 N 秒重新画一遍同样的译文。
+            if (loopMode && overlay?.hasActiveBlocks() == true) {
+                return
+            }
             val shotter = screenshotter ?: return
             val full = shotter.capture()
             if (full == null) {
@@ -265,6 +271,43 @@ class CaptureService : Service() {
 
             if (loopMode && deduper.shouldSkip(workBitmap)) {
                 workBitmap.recycle()
+                return
+            }
+
+            // 端到端引擎（有道图片翻译）：跳过 OCR 阶段，直接拿带译文的 box；不走 mergeAdjacentBlocks
+            // 也不走后续 translateOne，因为译文已经在 region 粒度上对齐好了。
+            val routingT = translator as? com.gameocr.app.translate.RoutingTranslator
+            val isEndToEnd = routingT?.isEndToEndFor(settings) ?: translator.isEndToEnd
+            if (isEndToEnd) {
+                val translatedBlocks = try {
+                    translator.ocrAndTranslate(workBitmap, settings)
+                } catch (ce: kotlinx.coroutines.CancellationException) {
+                    workBitmap.recycle()
+                    throw ce
+                } catch (t: Throwable) {
+                    Timber.w(t, "End-to-end OCR+translate failed")
+                    logRepository.error(
+                        LogRepository.Category.OCR,
+                        getString(R.string.log_msg_ocr_failed_format, settings.translatorEngine.name),
+                        t
+                    )
+                    val msg = getString(R.string.toast_ocr_failed_format, settings.translatorEngine.name, shortError(t))
+                    toast(msg, long = true)
+                    mainScope.launch { overlay?.showErrorHint(msg) }
+                    workBitmap.recycle()
+                    return
+                }
+                workBitmap.recycle()
+                if (translatedBlocks.isNotEmpty()) {
+                    val joined = translatedBlocks.mapIndexed { i, (b, dst) ->
+                        "#${i + 1} ${b.text} → $dst"
+                    }.joinToString(" | ")
+                    logRepository.info(LogRepository.Category.OCR, "[${settings.translatorEngine.name}] ${translatedBlocks.size} 段: $joined")
+                } else {
+                    logRepository.info(LogRepository.Category.OCR, "[${settings.translatorEngine.name}] 无识别结果")
+                    return
+                }
+                renderTranslatedBlocks(translatedBlocks, settings)
                 return
             }
 
@@ -339,6 +382,27 @@ class CaptureService : Service() {
         val b = region.bottom.coerceIn(0, src.height)
         if (r - l <= 8 || b - t <= 8) return src
         return Bitmap.createBitmap(src, l, t, r - l, b - t)
+    }
+
+    /**
+     * 端到端引擎（有道图片翻译）专用渲染：bitmap → 已经带译文的 box 列表，无需再调翻译。
+     * 直接按 renderMode 一次性吐到 overlay。每段原文/译文写一条 LogRepository pair。
+     */
+    private suspend fun renderTranslatedBlocks(
+        items: List<Pair<TextBlock, String>>,
+        settings: Settings
+    ) {
+        items.forEach { (b, dst) ->
+            logRepository.pair(LogRepository.Category.TRANSLATE, b.text, dst)
+        }
+        when (settings.renderMode) {
+            RenderMode.BLOCKS -> withContext(Dispatchers.Main) {
+                overlay?.showBlocks(items)
+            }
+            RenderMode.BANNER -> withContext(Dispatchers.Main) {
+                overlay?.showFullScreen(items.map { (b, dst) -> b.text to dst })
+            }
+        }
     }
 
     private suspend fun renderBlocks(blocks: List<TextBlock>, settings: Settings) {

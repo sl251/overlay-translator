@@ -172,6 +172,59 @@ class DeepLTranslator @Inject constructor(
         return result.toList()
     }
 
+    override suspend fun testConnection(settings: Settings): TestResult {
+        if (settings.deeplApiKey.isBlank()) {
+            return TestResult(false, appContext.getString(R.string.err_deepl_no_api_key))
+        }
+        val endpoint = if (settings.deeplPro) "https://api.deepl.com/v2/usage"
+        else "https://api-free.deepl.com/v2/usage"
+        val request = Request.Builder()
+            .url(endpoint)
+            .header("Authorization", "DeepL-Auth-Key ${settings.deeplApiKey}")
+            .header("Accept", "application/json")
+            .get()
+            .build()
+        val timedClient = client.withApiTimeout(settings.apiTimeoutSeconds)
+        return runCatching {
+            withContext(Dispatchers.IO) {
+                timedClient.newCall(request).execute().use { resp ->
+                    val raw = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) {
+                        // 403 常见原因：Free key 调了 Pro endpoint，或反之 —— 明确提示用户切开关
+                        val hint = if (resp.code == 403) {
+                            " (" + appContext.getString(R.string.settings_test_deepl_403_hint) + ")"
+                        } else ""
+                        val msg = parseError(raw) ?: raw.take(200)
+                        return@use TestResult(false, "HTTP ${resp.code}: $msg$hint")
+                    }
+                    val usage = runCatching { json.decodeFromString<DeepLUsage>(raw) }
+                        .getOrElse {
+                            return@use TestResult(
+                                false,
+                                appContext.getString(R.string.err_deepl_parse_failed_format, raw.take(200))
+                            )
+                        }
+                    val used = usage.characterCount
+                    val limit = usage.characterLimit
+                    val remainPct = if (limit > 0) ((limit - used) * 100 / limit).toInt() else 0
+                    TestResult(
+                        true,
+                        appContext.getString(
+                            R.string.settings_test_ok_deepl_format,
+                            formatNumber(used),
+                            formatNumber(limit),
+                            remainPct
+                        )
+                    )
+                }
+            }
+        }.getOrElse { e ->
+            TestResult(false, e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    private fun formatNumber(n: Long): String = "%,d".format(n)
+
     /** 把内部 targetLang 字符串映射成 DeepL 期望格式（大写、特殊处理 ZH-HANT）。 */
     private fun mapTargetLang(code: String): String = when (code.trim().lowercase()) {
         "zh-cn", "zh", "chinese" -> "ZH"
@@ -219,4 +272,11 @@ class DeepLTranslator @Inject constructor(
 
     @Serializable
     private data class DeepLError(val message: String? = null)
+
+    /** `GET /v2/usage` 响应 schema：当前周期已用 / 总额度（Free 档默认 500k）。 */
+    @Serializable
+    private data class DeepLUsage(
+        @SerialName("character_count") val characterCount: Long = 0,
+        @SerialName("character_limit") val characterLimit: Long = 0
+    )
 }

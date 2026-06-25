@@ -31,6 +31,9 @@ object OcrLanguageCapability {
     /** PaddleOCR PP-OCRv5 mobile rec 字典涵盖的语言（中英日融合）。韩 / 拉丁系扩展暂未打包。 */
     private val PADDLE_V5_LANGS = setOf("zh", "zh-CN", "zh-TW", "en", "ja")
 
+    /** 有道智云 OCR (ocrapi) 支持的 langType 对应 BCP-47 集合。 */
+    private val YOUDAO_LANGS = setOf("zh", "zh-CN", "zh-TW", "en", "ja", "ko", "fr", "de", "es", "ru", "pt", "it")
+
     /** ML Kit 自动模式实际可命中的语言集合（含 latin 子集）。 */
     private val ML_KIT_AUTO_LANGS = ML_KIT_LATIN_LANGS + setOf("ja", "ko", "zh", "zh-CN", "zh-TW")
 
@@ -73,6 +76,8 @@ object OcrLanguageCapability {
             OcrEngineKind.PADDLE_ONNX -> code in PADDLE_V5_LANGS
             OcrEngineKind.BAIDU -> baiduSupports(baiduEndpoint, baiduLanguage, code)
             OcrEngineKind.TENCENT -> tencentSupports(tencentEndpoint, tencentLanguage, code)
+            // 有道 OCR 由 sourceLang 直接映射 langType，覆盖 zh/en/ja/ko/fr/de/es/ru/pt/it/auto
+            OcrEngineKind.YOUDAO -> code in YOUDAO_LANGS
         }
     }
 
@@ -92,6 +97,8 @@ object OcrLanguageCapability {
     ): Boolean = when (engine) {
         OcrEngineKind.ML_KIT_AUTO -> true
         OcrEngineKind.PADDLE_ONNX -> true
+        // 有道 OCR 支持 langType=auto，可视作通用模式
+        OcrEngineKind.YOUDAO -> true
         OcrEngineKind.ML_KIT_LATIN,
         OcrEngineKind.ML_KIT_JAPANESE,
         OcrEngineKind.ML_KIT_KOREAN,
@@ -414,7 +421,9 @@ object OcrLanguageCapability {
         OcrEngineKind.ML_KIT_CHINESE -> "zh-CN"
         OcrEngineKind.ML_KIT_AUTO,
         OcrEngineKind.ML_KIT_LATIN,
-        OcrEngineKind.PADDLE_ONNX -> null
+        OcrEngineKind.PADDLE_ONNX,
+        // 有道 OCR 由 sourceLang 反向映射 langType，没有单独的"OCR 内部语种"字段
+        OcrEngineKind.YOUDAO -> null
         OcrEngineKind.BAIDU -> baiduLanguage.bcp47
         OcrEngineKind.TENCENT -> tencentLanguage.bcp47
     }

@@ -74,6 +74,8 @@ class SettingsRepository @Inject constructor(
         val ApiTimeoutSec = intPreferencesKey("api_timeout_seconds")
         val MergeAdjacent = booleanPreferencesKey("ocr_merge_adjacent")
         val MergeStrengthKey = stringPreferencesKey("ocr_merge_strength")
+        val YoudaoAppKey = stringPreferencesKey("youdao_app_key")
+        val YoudaoAppSecret = stringPreferencesKey("youdao_app_secret")
     }
 
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
@@ -132,6 +134,8 @@ class SettingsRepository @Inject constructor(
             prefs[Keys.ApiTimeoutSec] = next.apiTimeoutSeconds
             prefs[Keys.MergeAdjacent] = next.mergeAdjacentBlocks
             prefs[Keys.MergeStrengthKey] = next.mergeStrength.name
+            prefs[Keys.YoudaoAppKey] = next.youdaoAppKey
+            prefs[Keys.YoudaoAppSecret] = next.youdaoAppSecret
         }
     }
 
@@ -211,7 +215,9 @@ class SettingsRepository @Inject constructor(
             apiTimeoutSeconds = this[Keys.ApiTimeoutSec] ?: default.apiTimeoutSeconds,
             mergeAdjacentBlocks = this[Keys.MergeAdjacent] ?: default.mergeAdjacentBlocks,
             mergeStrength = runCatching { MergeStrength.valueOf(this[Keys.MergeStrengthKey] ?: "") }
-                .getOrDefault(default.mergeStrength)
+                .getOrDefault(default.mergeStrength),
+            youdaoAppKey = this[Keys.YoudaoAppKey] ?: default.youdaoAppKey,
+            youdaoAppSecret = this[Keys.YoudaoAppSecret] ?: default.youdaoAppSecret
         )
     }
 }

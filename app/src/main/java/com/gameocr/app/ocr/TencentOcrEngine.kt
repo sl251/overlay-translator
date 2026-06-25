@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Rect
 import android.util.Base64
 import com.gameocr.app.R
+import com.gameocr.app.data.LogRepository
 import com.gameocr.app.data.OcrEngineKind
 import com.gameocr.app.data.SettingsRepository
 import com.gameocr.app.data.TencentOcrEndpoint
@@ -49,7 +50,8 @@ class TencentOcrEngine @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val client: OkHttpClient,
     private val json: Json,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val logRepository: LogRepository
 ) : OcrEngine {
 
     override suspend fun recognize(bitmap: Bitmap, kind: OcrEngineKind): List<TextBlock> {
@@ -80,7 +82,7 @@ class TencentOcrEngine @Inject constructor(
         })
 
         val timedClient = client.withApiTimeout(s.apiTimeoutSeconds)
-        val resp = withContext(Dispatchers.IO) {
+        val (resp, raw) = withContext(Dispatchers.IO) {
             doSignedCall(
                 httpClient = timedClient,
                 secretId = s.tencentSecretId,
@@ -96,24 +98,111 @@ class TencentOcrEngine @Inject constructor(
         if (resp.response?.error != null) {
             throw RuntimeException("Tencent OCR ${resp.response.error.code} (${endpoint.name}): ${resp.response.error.message}")
         }
-        val items = resp.response?.textDetections.orEmpty()
-        return items.mapIndexed { i, item ->
-            val poly = item.polygon
-            val box = if (poly.isNullOrEmpty()) Rect(0, 80 + i * 60, bitmap.width, 80 + (i + 1) * 60)
-            else Rect(
-                poly.minOf { it.x ?: 0 },
-                poly.minOf { it.y ?: 0 },
-                poly.maxOf { it.x ?: 0 },
-                poly.maxOf { it.y ?: 0 }
-            )
-            TextBlock(
-                text = item.detectedText.orEmpty(),
-                boundingBox = box,
-                confidence = (item.confidence ?: 100).toFloat() / 100f,
-                recognizedLanguage = item.language ?: "auto"
-            )
+        // RecognizeAgent 响应嵌套了一层：外层 Response 下又有 `Response` 数组，
+        // TextDetections 在数组元素里。通用 OCR 不嵌套，直接在外层取。
+        val items = if (endpoint == TencentOcrEndpoint.RECOGNIZE_AGENT) {
+            resp.response?.agentResponse?.flatMap { it.textDetections.orEmpty() }.orEmpty()
+        } else {
+            resp.response?.textDetections.orEmpty()
         }
+        if (endpoint == TencentOcrEndpoint.RECOGNIZE_AGENT && items.isEmpty()) {
+            val short = raw.take(800)
+            Timber.tag("TencentOcr").i("[RecognizeAgent] empty result. raw=%s", short)
+            logRepository.info(LogRepository.Category.OCR, "[RecognizeAgent] empty. raw: $short")
+        }
+        val blocks = items.mapIndexed { i, item -> toTextBlock(item, i, bitmap.width) }
+        // RecognizeAgent 会返回多粒度 box（段级 + 字级 + 重复），用它在 AdvancedInfo 里附带的
+        // ParagNo（腾讯自己算的段落分组）合并，比我们做几何聚类准很多。
+        if (endpoint == TencentOcrEndpoint.RECOGNIZE_AGENT && blocks.isNotEmpty()) {
+            val paragNos = items.map { parseParagNo(it.advancedInfo) }
+            val allHavePN = paragNos.all { it != null }
+            if (allHavePN) {
+                val merged = groupByParagraph(blocks.zip(paragNos.map { it!! }))
+                Timber.tag("TencentOcr").i("[RecognizeAgent] paragraph merge: %d -> %d", blocks.size, merged.size)
+                logRepository.info(
+                    LogRepository.Category.OCR,
+                    "[RecognizeAgent] 按 ParagNo 合并: ${blocks.size} -> ${merged.size} 段"
+                )
+                return merged
+            }
+        }
+        return blocks
     }
+
+    private fun toTextBlock(item: TextDetection, index: Int, fallbackW: Int): TextBlock {
+        val poly = item.polygon
+        val box = if (poly.isNullOrEmpty()) Rect(0, 80 + index * 60, fallbackW, 80 + (index + 1) * 60)
+        else Rect(
+            poly.minOf { it.x ?: 0 },
+            poly.minOf { it.y ?: 0 },
+            poly.maxOf { it.x ?: 0 },
+            poly.maxOf { it.y ?: 0 }
+        )
+        return TextBlock(
+            text = item.detectedText.orEmpty(),
+            boundingBox = box,
+            confidence = (item.confidence ?: 100).toFloat() / 100f,
+            recognizedLanguage = item.language ?: "auto"
+        )
+    }
+
+    /**
+     * 按 ParagNo 分组合并。每段：
+     *  1) 先去嵌套——按面积降序遍历，新 box 如果完全嵌在已保留 box 内（段级框包字级框）则丢掉
+     *  2) 剩下的 box union 出整段 bbox
+     *  3) 文本拼接：若整段 bbox h > w 当竖排，按 left desc 排（日文 right-to-left）；否则当横排
+     */
+    private fun groupByParagraph(blocksWithParag: List<Pair<TextBlock, Int>>): List<TextBlock> {
+        return blocksWithParag.groupBy { it.second }
+            .map { (_, group) -> unionParagraph(group.map { it.first }) }
+            .sortedBy { it.boundingBox.top }
+    }
+
+    private fun unionParagraph(blocks: List<TextBlock>): TextBlock {
+        if (blocks.size == 1) return blocks[0]
+        val deduped = removeNestedBoxes(blocks)
+        val union = deduped.map { it.boundingBox }.reduce { a, b ->
+            Rect(minOf(a.left, b.left), minOf(a.top, b.top),
+                 maxOf(a.right, b.right), maxOf(a.bottom, b.bottom))
+        }
+        val isVertical = union.height() > union.width()
+        val sorted = if (isVertical) {
+            // 竖排日文 right-to-left：先按 left desc，再按 top asc
+            deduped.sortedWith(
+                compareByDescending<TextBlock> { it.boundingBox.left }.thenBy { it.boundingBox.top }
+            )
+        } else {
+            // 横排：先 top，再 left
+            deduped.sortedWith(compareBy({ it.boundingBox.top }, { it.boundingBox.left }))
+        }
+        val sep = if (isVertical) "" else " "  // 竖排单字直接连，横排单字之间留空格
+        val text = sorted.joinToString(sep) { it.text }
+        val avgConf = deduped.map { it.confidence }.average().toFloat()
+        return TextBlock(
+            text = text,
+            boundingBox = union,
+            confidence = avgConf,
+            recognizedLanguage = deduped.firstOrNull()?.recognizedLanguage
+        )
+    }
+
+    /** 去掉完全嵌在更大 box 内的小 box——段级 box 已经包含段内所有字，字级 box 是重复信息。 */
+    private fun removeNestedBoxes(blocks: List<TextBlock>): List<TextBlock> {
+        val sorted = blocks.sortedByDescending { it.boundingBox.width() * it.boundingBox.height() }
+        val kept = mutableListOf<TextBlock>()
+        for (b in sorted) {
+            val nested = kept.any { existing ->
+                val e = existing.boundingBox; val r = b.boundingBox
+                r.left >= e.left && r.right <= e.right && r.top >= e.top && r.bottom <= e.bottom
+            }
+            if (!nested) kept.add(b)
+        }
+        return kept
+    }
+
+    private val paragNoRegex = Regex("\"ParagNo\"\\s*:\\s*(\\d+)")
+    private fun parseParagNo(adv: String?): Int? =
+        adv?.let { paragNoRegex.find(it)?.groupValues?.get(1)?.toIntOrNull() }
 
     private fun doSignedCall(
         httpClient: okhttp3.OkHttpClient,
@@ -125,7 +214,7 @@ class TencentOcrEngine @Inject constructor(
         action: String,
         version: String,
         payload: String
-    ): TencentOcrResponse {
+    ): Pair<TencentOcrResponse, String> {
         val timestamp = System.currentTimeMillis() / 1000L
         val date = utcDate(timestamp)
         val credentialScope = "$date/$service/tc3_request"
@@ -177,13 +266,14 @@ class TencentOcrEngine @Inject constructor(
         return httpClient.newCall(request).execute().use { r ->
             val raw = r.body?.string().orEmpty()
             if (!r.isSuccessful) throw RuntimeException("Tencent HTTP ${r.code}: ${raw.take(200)}")
-            runCatching { json.decodeFromString<TencentOcrResponse>(raw) }
+            val parsed = runCatching { json.decodeFromString<TencentOcrResponse>(raw) }
                 .getOrElse {
                     throw RuntimeException(
                         appContext.getString(R.string.err_tencent_parse_failed_format, raw.take(200)),
                         it
                     )
                 }
+            parsed to raw
         }
     }
 
@@ -222,7 +312,19 @@ class TencentOcrEngine @Inject constructor(
         @SerialName("TextDetections") val textDetections: List<TextDetection>? = null,
         @SerialName("Language") val language: String? = null,
         @SerialName("RequestId") val requestId: String? = null,
-        @SerialName("Error") val error: ErrorBody? = null
+        @SerialName("Error") val error: ErrorBody? = null,
+        /**
+         * RecognizeAgent 专用：响应外层 Response 下又嵌套了一层 `Response` 数组，
+         * `TextDetections` 在数组元素里（不像通用 OCR 直接放在外层）。本字段兜住这层
+         * 嵌套；通用 OCR 接口返回 null。
+         */
+        @SerialName("Response") val agentResponse: List<AgentResponseItem>? = null
+    )
+
+    @Serializable
+    private data class AgentResponseItem(
+        @SerialName("TextDetections") val textDetections: List<TextDetection>? = null,
+        @SerialName("Answer") val answer: String? = null
     )
 
     @Serializable

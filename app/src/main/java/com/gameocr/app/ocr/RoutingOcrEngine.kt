@@ -2,6 +2,7 @@ package com.gameocr.app.ocr
 
 import android.graphics.Bitmap
 import android.graphics.Rect
+import com.gameocr.app.data.LogRepository
 import com.gameocr.app.data.MergeStrength
 import com.gameocr.app.data.OcrEngineKind
 import com.gameocr.app.data.SettingsRepository
@@ -21,13 +22,16 @@ class RoutingOcrEngine @Inject constructor(
     private val baidu: BaiduOcrEngine,
     private val tencent: TencentOcrEngine,
     private val paddle: PaddleOcrEngine,
-    private val settingsRepository: SettingsRepository
+    private val youdao: YoudaoOcrEngine,
+    private val settingsRepository: SettingsRepository,
+    private val logRepository: LogRepository
 ) : OcrEngine {
 
     override suspend fun recognize(bitmap: Bitmap, kind: OcrEngineKind): List<TextBlock> {
         val raw = when (kind) {
             OcrEngineKind.BAIDU -> baidu.recognize(bitmap, kind)
             OcrEngineKind.TENCENT -> tencent.recognize(bitmap, kind)
+            OcrEngineKind.YOUDAO -> youdao.recognize(bitmap, kind)
             OcrEngineKind.PADDLE_ONNX -> paddle.recognize(bitmap, kind)
             else -> mlKit.recognize(bitmap, kind)
         }
@@ -38,7 +42,8 @@ class RoutingOcrEngine @Inject constructor(
         logBoxes("before", raw)
         val merged = mergeAdjacentBlocks(raw, MergeParams.forStrength(settings.mergeStrength))
         Timber.tag("OcrMerge").i(
-            "strength=%s, %d -> %d blocks", settings.mergeStrength, raw.size, merged.size
+            "strength=%s, %d -> %d blocks (final)",
+            settings.mergeStrength, raw.size, merged.size
         )
         logBoxes("after", merged)
         return merged
@@ -61,26 +66,91 @@ class RoutingOcrEngine @Inject constructor(
         baidu.close()
         tencent.close()
         paddle.close()
+        youdao.close()
     }
 
     /**
      * 两阶段段落聚类：
      *
-     *  阶段 1：**同行邻接合并** —— 把同一行内左右紧邻的小 box 合成一行（空格拼接）。
-     *           例："WHEN SHE" + "SOBERS UP." → "WHEN SHE SOBERS UP."
+     *  阶段 1：**同行/同列邻接合并** —— 把"主轴方向相邻"的小 box 合成一段。
+     *           横排：同一行内左右紧邻 → 空格拼接（"WHEN SHE" + "SOBERS UP." → "WHEN SHE SOBERS UP."）
+     *           竖排：同一列内上下接续 → 换行拼接
      *
-     *  阶段 2：**同列上下合并** —— 把上一阶段产物中"水平区间有相交 + 上下邻接 + 高度
-     *           接近"的两行合成一个段落（换行符 \n 拼接）。
-     *           例：漫画气泡内 3 行小字合并成单条 3 行段落，整段送翻译，语境完整。
+     *  阶段 2：**跨主轴段落合并** —— 把"主轴对齐 + 次轴邻接"的两段合成一个段落。
+     *           横排：水平区间相交 + 上下邻接 → 换行拼接（漫画气泡 3 行小字 → 单条 3 行）
+     *           竖排：垂直区间相交 + 左右邻接 → 换行拼接，且**列拼接顺序按 right-to-left**（日文竖排）
      *
-     * 这样 OCR 行级输出 → 视觉段落级输出，下游叠加层就只看到几个大 box，不会再因为
-     * "一段话被拆成 5 个相邻框"导致译文层互相重叠。
+     * 方向通过 [detectOrientation] 自动探测（按 box 高宽比中位数 / portrait 占比）。这样
+     * OCR 行级输出 → 视觉段落级输出，下游叠加层只看到几个大 box，不会因"一段话被拆成 5
+     * 个相邻框"导致译文层互相重叠。
      */
     private fun mergeAdjacentBlocks(blocks: List<TextBlock>, params: MergeParams): List<TextBlock> {
         if (blocks.size <= 1) return blocks
-        val lineMerged = mergeSameLine(blocks, params)
-        return mergeParagraph(lineMerged, params)
+        val orientation = detectOrientation(blocks)
+        return when (orientation) {
+            Orientation.HORIZONTAL -> {
+                val lineMerged = mergeSameLine(blocks, params)
+                val msg1 = "[H] stage1 sameLine: ${blocks.size} -> ${lineMerged.size}"
+                Timber.tag("OcrMerge").i(msg1)
+                logRepository.info(LogRepository.Category.OCR, msg1)
+                val paraMerged = mergeParagraph(lineMerged, params)
+                val msg2 = "[H] stage2 paragraph: ${lineMerged.size} -> ${paraMerged.size}"
+                Timber.tag("OcrMerge").i(msg2)
+                logRepository.info(LogRepository.Category.OCR, msg2)
+                paraMerged
+            }
+            Orientation.VERTICAL -> {
+                // 竖排日文专属：先丢振假名（ふりがな汉字注音小列），避免译文里出现
+                // "しっぱい/失敗"读音+汉字重复，也让 overlay 不再两列叠在一起。
+                val deFurigana = removeFurigana(blocks)
+                if (deFurigana.size != blocks.size) {
+                    val msg = "[V] removeFurigana: ${blocks.size} -> ${deFurigana.size}"
+                    Timber.tag("OcrMerge").i(msg)
+                    logRepository.info(LogRepository.Category.OCR, msg)
+                }
+                val columnMerged = mergeSameColumn(deFurigana, params)
+                val msg1 = "[V] stage1 sameColumn: ${deFurigana.size} -> ${columnMerged.size}"
+                Timber.tag("OcrMerge").i(msg1)
+                logRepository.info(LogRepository.Category.OCR, msg1)
+                val paraMerged = mergeColumnsToParagraph(columnMerged, params)
+                val msg2 = "[V] stage2 columnsToPara (R→L): ${columnMerged.size} -> ${paraMerged.size}"
+                Timber.tag("OcrMerge").i(msg2)
+                logRepository.info(LogRepository.Category.OCR, msg2)
+                paraMerged
+            }
+        }
     }
+
+    /**
+     * 探测当前帧排版方向。
+     *
+     * 判据：把 box 按 h/w 比分成 portrait（h > w * 1.3）与其它，portrait 占比 ≥ 50% → 竖排。
+     * 阈值留 30% 缓冲（h/w∈[0.77, 1.3]）算"中性"——单字符 box / 漫画拟声词常落在这区间，
+     * 不影响判定。
+     *
+     * 同时打日志，让 logcat 能溯源到为什么走了某条路径——竖排日漫一旦被误判为横排，stage2
+     * 就用错了"水平相交"判据，导致即使激进档也合不上。
+     */
+    private fun detectOrientation(blocks: List<TextBlock>): Orientation {
+        val portrait = blocks.count {
+            val r = it.boundingBox
+            r.height() > r.width() * 1.3f
+        }
+        val landscape = blocks.count {
+            val r = it.boundingBox
+            r.width() > r.height() * 1.3f
+        }
+        val ratio = portrait.toFloat() / blocks.size
+        val orientation = if (portrait > landscape && ratio >= 0.5f)
+            Orientation.VERTICAL else Orientation.HORIZONTAL
+        val msg = "[detect] orientation=$orientation, portrait=$portrait landscape=$landscape " +
+            "total=${blocks.size} (portraitRatio=${"%.2f".format(ratio)})"
+        Timber.tag("OcrMerge").i(msg)
+        logRepository.info(LogRepository.Category.OCR, msg)
+        return orientation
+    }
+
+    private enum class Orientation { HORIZONTAL, VERTICAL }
 
     private fun mergeSameLine(blocks: List<TextBlock>, params: MergeParams): List<TextBlock> {
         val sorted = blocks.sortedWith(compareBy({ it.boundingBox.top }, { it.boundingBox.left }))
@@ -169,6 +239,140 @@ class RoutingOcrEngine @Inject constructor(
         return gap >= -5 && gap <= avgH * params.adjacentGapRatio
     }
 
+    /**
+     * 竖排日文振假名（ふりがな汉字注音）过滤。
+     *
+     * 判据（同时满足才算振假名，丢掉）：
+     *  - 紧贴某更宽 box（水平 gap ≤ 自身宽度）
+     *  - 宽度比小（self.w / big.w < 0.6）
+     *  - 高度比够大（self.h / big.h > 0.25，注音覆盖足够汉字范围；过滤孤立小段如「ため」）
+     *  - 垂直区间完全被大 box 包住（注音只标自己范围内的字，不会越界）
+     *
+     * 调过的样本：百度高精度+位置版输出的「しっぱい」「けんこうてき」「にんげん」「はんにん」
+     * 都能命中；同帧的孤立小段「ため」（h/big.h=0.12）「おる」（h/big.h=0.16）保留。
+     */
+    private fun removeFurigana(blocks: List<TextBlock>): List<TextBlock> {
+        if (blocks.size < 2) return blocks
+        return blocks.filter { small ->
+            val sb = small.boundingBox
+            val isFurigana = blocks.any { other ->
+                if (other === small) return@any false
+                val bb = other.boundingBox
+                if (bb.width() <= sb.width()) return@any false
+                if (sb.width().toFloat() / bb.width() >= 0.6f) return@any false
+                if (sb.height().toFloat() / bb.height() <= 0.25f) return@any false
+                val hGap = if (sb.left >= bb.left) sb.left - bb.right else bb.left - sb.right
+                if (hGap > sb.width()) return@any false
+                if (sb.top < bb.top - 10 || sb.bottom > bb.bottom + 10) return@any false
+                true
+            }
+            !isFurigana
+        }
+    }
+
+    /**
+     * 竖排阶段 1：把"同一列内上下接续"的 box 用 \n 串成单段。
+     *
+     * 镜像 [mergeSameLine]：主轴从"水平 + 高度参考"换到"垂直 + 宽度参考"。判据用宽度
+     * 而非高度——竖排里 box 宽度 ≈ 单字大小，与横排里 box 高度同义。
+     */
+    private fun mergeSameColumn(blocks: List<TextBlock>, params: MergeParams): List<TextBlock> {
+        val sorted = blocks.sortedWith(compareBy({ it.boundingBox.left }, { it.boundingBox.top }))
+        val result = mutableListOf<TextBlock>()
+        for (b in sorted) {
+            val last = result.lastOrNull()
+            if (last != null && sameColumnAdjacent(last, b, params)) {
+                result[result.size - 1] = unionMerge(last, b, separator = "\n")
+            } else {
+                result.add(b)
+            }
+        }
+        return result
+    }
+
+    /**
+     * 竖排阶段 2：把"垂直区间相交 + 左右邻接"的两列合成一段。
+     *
+     * 关键：列拼接顺序 **right-to-left** —— 日文竖排从最右一列起读。sortedByDescending(left)
+     * 让右列先成为 acc，后续的左列 union 进去时 acc 在前 sep 在后 → 文本顺序正确。
+     */
+    private fun mergeColumnsToParagraph(blocks: List<TextBlock>, params: MergeParams): List<TextBlock> {
+        if (blocks.size <= 1) return blocks
+        var current = blocks
+        repeat(10) {
+            val (next, merged) = mergeColumnsOnce(current, params)
+            if (!merged) return current
+            current = next
+        }
+        return current
+    }
+
+    private fun mergeColumnsOnce(blocks: List<TextBlock>, params: MergeParams): Pair<List<TextBlock>, Boolean> {
+        val sorted = blocks.sortedWith(
+            compareByDescending<TextBlock> { it.boundingBox.left }.thenBy { it.boundingBox.top }
+        )
+        val used = BooleanArray(sorted.size)
+        val result = mutableListOf<TextBlock>()
+        var anyMerged = false
+        for (i in sorted.indices) {
+            if (used[i]) continue
+            var acc = sorted[i]
+            used[i] = true
+            for (j in i + 1 until sorted.size) {
+                if (used[j]) continue
+                if (columnsHorizontallyAdjacent(acc, sorted[j], params)) {
+                    // acc 是右列（sort desc by left 保证），sorted[j] 是左列 → 文本顺序 acc 在前
+                    acc = unionMerge(acc, sorted[j], separator = "\n")
+                    used[j] = true
+                    anyMerged = true
+                }
+            }
+            result.add(acc)
+        }
+        return result to anyMerged
+    }
+
+    private fun sameColumnAdjacent(a: TextBlock, b: TextBlock, params: MergeParams): Boolean {
+        // 上下 normalize：让 ra 总是更上的，rb 总是更下的；与 sameLineAdjacent 镜像。
+        val (ra, rb) = if (a.boundingBox.top <= b.boundingBox.top)
+            a.boundingBox to b.boundingBox
+        else
+            b.boundingBox to a.boundingBox
+        val wa = ra.width().coerceAtLeast(1)
+        val wb = rb.width().coerceAtLeast(1)
+        val avgW = (wa + wb) / 2
+        if (maxOf(wa, wb).toFloat() / minOf(wa, wb) > params.heightRatioLimit) return false
+        val sameCol = kotlin.math.abs(ra.left - rb.left) < avgW * params.sameLineTopTolerance
+        if (!sameCol) return false
+        val gap = rb.top - ra.bottom
+        return gap >= -5 && gap <= avgW * params.adjacentGapRatio
+    }
+
+    /**
+     * 竖排"左右邻接 + 垂直区间相交"判据。与 [verticallyAdjacent] 严格镜像：把"高度"
+     * 全部换成"宽度"，"水平相交"换成"垂直相交"。
+     */
+    private fun columnsHorizontallyAdjacent(a: TextBlock, b: TextBlock, params: MergeParams): Boolean {
+        val ra = a.boundingBox; val rb = b.boundingBox
+        val wa = ra.width().coerceAtLeast(1)
+        val wb = rb.width().coerceAtLeast(1)
+        val colW = minOf(wa, wb)
+        // 左右先 normalize：rR 是右列、rL 是左列
+        val (rR, rL) = if (ra.left >= rb.left) ra to rb else rb to ra
+        // 镜像 verticallyAdjacent 的 "rb.top < ra.bottom - lineH * 0.3"：允许小重叠
+        if (rL.right < rR.left - colW * 0.3f) return false
+        val hGap = rR.left - rL.right
+        if (hGap > colW * params.verticalGapRatio) return false
+        val overlapTop = maxOf(ra.top, rb.top)
+        val overlapBottom = minOf(ra.bottom, rb.bottom)
+        val overlapH = overlapBottom - overlapTop
+        if (overlapH <= 0) return false
+        val minH = minOf(ra.height(), rb.height())
+        if (overlapH.toFloat() / minH < params.horizontalOverlapRatio) return false
+        // 同 verticallyAdjacent：stage2 不再做 size ratio limit
+        return true
+    }
+
     private fun verticallyAdjacent(a: TextBlock, b: TextBlock, params: MergeParams): Boolean {
         val ra = a.boundingBox; val rb = b.boundingBox
         val ha = ra.height().coerceAtLeast(1)
@@ -183,7 +387,8 @@ class RoutingOcrEngine @Inject constructor(
         if (overlapW <= 0) return false
         val minW = minOf(ra.width(), rb.width())
         if (overlapW.toFloat() / minW < params.horizontalOverlapRatio) return false
-        if (maxOf(ha, hb).toFloat() / minOf(ha, hb) > params.heightRatioLimit) return false
+        // 注意：不再做 heightRatioLimit 检查——stage2 是跨行/跨列合并，acc 累积后段
+        // 高/段宽天然就远大于单行/单列，再用 ratio 反而会让剩余孤立小列接不进段。
         return true
     }
 

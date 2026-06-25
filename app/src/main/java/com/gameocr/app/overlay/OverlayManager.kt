@@ -325,10 +325,17 @@ class OverlayManager(
                     // 不显示省略号——即使超过 10 行也直接截，省略号在 OCR 场景看着像 bug
                     ellipsize = null
                 } else {
-                    // 强制单行模式：保留省略号让用户知道有截断
+                    // 强制单行模式：长译文不再显示"…"截断，改用 MARQUEE 跑马灯——文本超
+                    // 出可视区域时自动横向滚动，能看到完整内容；短文本则像普通 TextView。
+                    // marquee 需要 view 拿到 focus 或 isSelected=true 才会启动；overlay 窗
+                    // 口拿不到 focus（我们设的 FLAG_NOT_FOCUSABLE），所以靠 isSelected。
                     setSingleLine(true)
                     maxLines = 1
-                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    ellipsize = android.text.TextUtils.TruncateAt.MARQUEE
+                    marqueeRepeatLimit = -1
+                    isSelected = true
+                    isFocusable = true
+                    isFocusableInTouchMode = true
                 }
                 isHorizontalFadingEdgeEnabled = false
                 // 智能 maxWidth：受 (相邻块左边界, 屏幕右边) 双重约束
@@ -364,6 +371,12 @@ class OverlayManager(
     fun updateBlockText(index: Int, text: String) {
         blockViews[index]?.text = text
     }
+
+    /**
+     * 是否有"上一帧译文 box"仍然挂在屏幕上未被点掉。循环模式靠这个判断要不要跳过本轮
+     * 截屏——用户没看完译文，不打扰。
+     */
+    fun hasActiveBlocks(): Boolean = blocksView != null && blockViews.isNotEmpty()
 
     fun clear() {
         clearLoading()

@@ -30,36 +30,70 @@ class ShizukuScreenshotter : Screenshotter {
         get() = !released.get() && runCatching { Shizuku.pingBinder() }.getOrDefault(false)
 
     override suspend fun capture(): Bitmap? = withContext(Dispatchers.IO) {
-        if (!isReady) return@withContext null
+        if (!isReady) {
+            Timber.w("[shizuku-cap] skip: not ready (released=%s, pingBinder=%s)",
+                released.get(),
+                runCatching { Shizuku.pingBinder() }.getOrDefault(false))
+            return@withContext null
+        }
         try {
-            val process = invokeNewProcess(arrayOf("sh", "-c", "screencap -p"))
-                ?: return@withContext null
+            // 直接执行 screencap（不经 sh -c）：避免 shell 把二进制 PNG 字节流当文本处理的风险。
+            val process = invokeNewProcess(arrayOf("screencap", "-p"))
+            if (process == null) {
+                Timber.w("[shizuku-cap] newProcess returned null — reflection target missing (R8 stripped Shizuku.newProcess?)")
+                return@withContext null
+            }
             val out = ByteArrayOutputStream(8 * 1024 * 1024)
             val inStream = process.javaClass.getMethod("getInputStream").invoke(process) as java.io.InputStream
             inStream.use { it.copyTo(out) }
             val ec = runCatching {
                 process.javaClass.getMethod("waitFor").invoke(process) as Int
-            }.getOrDefault(-1)
-            if (ec != 0) {
-                Timber.w("shizuku screencap exit=$ec")
-                return@withContext null
-            }
+            }.getOrElse { -1 }
             val bytes = out.toByteArray()
-            if (bytes.isEmpty()) {
-                Timber.w("shizuku screencap empty payload")
+            if (ec != 0) {
+                // 把 stderr 读出来一起打：screencap 失败时常常在 stderr 写明 selinux denied 之类
+                val err = runCatching {
+                    val es = process.javaClass.getMethod("getErrorStream").invoke(process) as java.io.InputStream
+                    es.use { String(it.readBytes()).take(300) }
+                }.getOrElse { "<no stderr>" }
+                Timber.w("[shizuku-cap] screencap exit=%d, stdoutBytes=%d, stderr=%s", ec, bytes.size, err)
                 return@withContext null
             }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            if (bytes.isEmpty()) {
+                Timber.w("[shizuku-cap] screencap exit=0 but empty payload")
+                return@withContext null
+            }
+            val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            if (bmp == null) {
+                Timber.w("[shizuku-cap] decode PNG failed, bytes=%d, head=%s",
+                    bytes.size, bytes.take(8).joinToString { "%02x".format(it) })
+            } else {
+                Timber.d("[shizuku-cap] ok %dx%d", bmp.width, bmp.height)
+            }
+            bmp
         } catch (t: Throwable) {
-            Timber.w(t, "ShizukuScreenshotter capture failed")
+            Timber.w(t, "[shizuku-cap] capture threw")
             null
         }
     }
 
-    /** 反射调用 `Shizuku.newProcess(String[], String[]?, String?)`，因为它在 13.x 被标 @hide。 */
+    /**
+     * 反射调用 `Shizuku.newProcess(String[], String[]?, String?)`，13.x 被标 @hide。
+     *
+     * 失败兜底：先按"声明方法 + 三参签名"精确查；找不到再扫所有同名方法。Release 包靠
+     * proguard-rules.pro 里 `-keep class rikka.shizuku.Shizuku` 防止 R8 重命名 / 移除。
+     */
     private fun invokeNewProcess(cmd: Array<String>): Any? {
         val cls = Shizuku::class.java
-        val method = cls.declaredMethods.firstOrNull { it.name == "newProcess" } ?: return null
+        val direct = runCatching {
+            cls.getDeclaredMethod("newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java)
+        }.getOrNull()
+        val method = direct ?: cls.declaredMethods.firstOrNull { it.name == "newProcess" }
+        if (method == null) {
+            val available = cls.declaredMethods.joinToString { it.name }
+            Timber.w("[shizuku-cap] no newProcess method found. declaredMethods=%s", available.take(500))
+            return null
+        }
         method.isAccessible = true
         return method.invoke(null, cmd, null, null)
     }

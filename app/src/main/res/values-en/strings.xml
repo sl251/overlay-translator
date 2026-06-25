@@ -160,6 +160,15 @@
     <string name="settings_label_translator_engine">Translator engine</string>
     <string name="settings_engine_openai_llm">OpenAI-compatible LLM</string>
     <string name="settings_engine_deepl">DeepL</string>
+    <string name="settings_engine_youdao_pictrans">Youdao PicTrans</string>
+    <string name="settings_engine_google">Google</string>
+    <string name="settings_google_tip">No config needed. Google may rate-limit or change the endpoint any time — for learning only. Proxy required inside mainland China.</string>
+    <string name="settings_youdao_app_key">Youdao App ID (API Key)</string>
+    <string name="settings_youdao_app_secret">Youdao App Secret</string>
+    <string name="settings_youdao_app_key_placeholder">Console → Applications → App ID</string>
+    <string name="settings_youdao_app_secret_placeholder">App Secret of the same application</string>
+    <string name="settings_youdao_tip">Generic OCR — billed per character; trial quota available on the console.</string>
+    <string name="settings_youdao_pictrans_tip">End-to-end engine: sends the full image and returns translated regions in one call — **bypasses the OCR engine above**. Billed per call.</string>
     <string name="settings_base_url_placeholder">https://api.siliconflow.cn/v1/  /  https://api.deepseek.com/v1/</string>
     <string name="settings_api_key_placeholder">sk-...</string>
     <string name="settings_model_placeholder">deepseek-v4-flash / gpt-4o-mini / glm-4-flash</string>
@@ -167,6 +176,16 @@
     <string name="settings_deepl_key_placeholder">Free plan ends with :fx; Pro does not</string>
     <string name="settings_deepl_use_pro">Use Pro endpoint (api.deepl.com)</string>
     <string name="settings_deepl_tip">Tip: Free plan gives 500k chars/month — sign up at https://www.deepl.com/pro-api. DeepL doesn\'t stream; the full result arrives at once. Chinese (Traditional) requires Pro.</string>
+
+    <!-- Translation engine connection test -->
+    <string name="settings_test_connection">Test connection</string>
+    <string name="settings_test_testing">Testing…</string>
+    <string name="settings_test_ok_deepl_format">OK · used %1$s / %2$s chars (%3$d%% left)</string>
+    <string name="settings_test_ok_openai_models_format">OK · fetched %1$d models (tap below to pick)</string>
+    <string name="settings_test_ok_openai_chat_format">OK · model=%1$s · %2$d ms</string>
+    <string name="settings_test_deepl_403_hint">check Free/Pro endpoint toggle matches your key</string>
+    <string name="settings_test_pick_model">Pick a model from the list</string>
+
     <string name="settings_prompt_label">Prompt template ({source} {target} will be substituted)</string>
     <string name="settings_prompt_warn_missing_format">Current prompt doesn\'t use the %1$s placeholder; the prompt text won\'t follow language changes.</string>
     <string name="settings_prompt_warn_hint_format">Note: a hidden rule still forces the target language to \"%1$s\", so the output language stays correct.</string>
@@ -180,6 +199,10 @@
     <string name="settings_ocr_chip_latin">Latin</string>
     <string name="settings_ocr_chip_baidu">Baidu</string>
     <string name="settings_ocr_chip_tencent">Tencent</string>
+    <string name="settings_ocr_chip_youdao">Youdao</string>
+    <string name="settings_ocr_group_local">On-device (no network, models downloaded on demand)</string>
+    <string name="settings_ocr_group_cloud">Cloud (requires API key, pay per call)</string>
+    <string name="settings_ocr_disabled_by_pictrans">"Youdao PicTrans" end-to-end engine is active — it does OCR + translation in one call, so the OCR settings below are ignored.</string>
     <string name="settings_ocr_chip_paddle">PaddleOCR</string>
     <string name="settings_ocr_intro">Pick the OCR engine for the text type:\n• Auto / Japanese / Korean / Chinese / Latin: Google ML Kit on-device (free, offline). \"Auto\" picks the model by detecting Hangul / kana; pinning a specific language slightly improves accuracy.\n• PaddleOCR: on-device multilingual; better on complex layouts. First use downloads ~20MB models. (Korean dict not bundled — use ML Kit or cloud for Korean.)\n• Baidu / Tencent Cloud: cloud OCR with API key (pay-as-you-go); pick Korean / Japanese etc. under \"Recognition language\" as a fallback.</string>
     <string name="settings_baidu_api_key">Baidu API Key</string>

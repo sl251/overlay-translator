@@ -27,3 +27,9 @@
 
 # Timber
 -dontwarn org.jetbrains.annotations.**
+
+# Shizuku：ShizukuScreenshotter 用反射调 hidden API `Shizuku.newProcess`，R8 不能 rename/strip
+-keep class rikka.shizuku.Shizuku { *; }
+-keep class rikka.shizuku.** { *; }
+-keep interface rikka.shizuku.** { *; }
+-dontwarn rikka.shizuku.**

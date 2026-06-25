@@ -23,6 +23,8 @@ class GameOcrApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // 仅 debug 包 plant DebugTree。release 包不打 logcat —— 避免线上日志泄漏；
+        // 用户能在 app 内日志页（LogRepository）看到 OCR / 翻译关键信息已经够诊断。
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
         }
