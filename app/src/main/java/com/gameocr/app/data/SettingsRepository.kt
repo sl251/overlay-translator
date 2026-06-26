@@ -72,8 +72,6 @@ class SettingsRepository @Inject constructor(
         val FloatingSnapEdge = booleanPreferencesKey("floating_button_snap_edge")
         val FloatingAutoDock = booleanPreferencesKey("floating_button_auto_dock")
         val FloatingDockInset = intPreferencesKey("floating_button_dock_inset_dp")
-        val FloatingLandscapeEdgeFix = booleanPreferencesKey("floating_button_landscape_edge_fix")
-        val FloatingLandscapeEdgeFixDp = intPreferencesKey("floating_button_landscape_edge_fix_dp")
         // 收藏的语言代码列表，逗号分隔（"ja,zh-CN,en"）。逗号不可能出现在 BCP-47 tag 里，分隔安全。
         val PinnedLangs = stringPreferencesKey("pinned_languages")
         val OverlayWrap = booleanPreferencesKey("overlay_allow_wrap")
@@ -146,8 +144,6 @@ class SettingsRepository @Inject constructor(
             prefs[Keys.FloatingSnapEdge] = next.floatingButtonSnapToEdge
             prefs[Keys.FloatingAutoDock] = next.floatingButtonAutoDock
             prefs[Keys.FloatingDockInset] = next.floatingButtonDockInsetDp
-            prefs[Keys.FloatingLandscapeEdgeFix] = next.floatingButtonLandscapeEdgeFix
-            prefs[Keys.FloatingLandscapeEdgeFixDp] = next.floatingButtonLandscapeEdgeFixDp
             prefs[Keys.PinnedLangs] = next.pinnedLanguages.joinToString(",")
             prefs[Keys.OverlayWrap] = next.overlayAllowWrap
             prefs[Keys.OverlayCollision] = next.overlayAvoidCollision
@@ -232,8 +228,6 @@ class SettingsRepository @Inject constructor(
             floatingButtonSnapToEdge = this[Keys.FloatingSnapEdge] ?: default.floatingButtonSnapToEdge,
             floatingButtonAutoDock = this[Keys.FloatingAutoDock] ?: default.floatingButtonAutoDock,
             floatingButtonDockInsetDp = this[Keys.FloatingDockInset] ?: default.floatingButtonDockInsetDp,
-            floatingButtonLandscapeEdgeFix = this[Keys.FloatingLandscapeEdgeFix] ?: default.floatingButtonLandscapeEdgeFix,
-            floatingButtonLandscapeEdgeFixDp = this[Keys.FloatingLandscapeEdgeFixDp] ?: default.floatingButtonLandscapeEdgeFixDp,
             pinnedLanguages = this[Keys.PinnedLangs]
                 ?.split(',')
                 ?.map { it.trim() }

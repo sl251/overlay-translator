@@ -174,8 +174,6 @@ fun SettingsScreen(
     var floatingSnapEdge by remember { mutableStateOf(true) }
     var floatingAutoDock by remember { mutableStateOf(false) }
     var floatingDockInset by remember { mutableStateOf(0f) }
-    var floatingLandscapeEdgeFix by remember { mutableStateOf(false) }
-    var floatingLandscapeEdgeFixDp by remember { mutableStateOf(42f) }
     // 悬浮按钮"贴边距离" slider 的实时预览：屏幕两侧画 inset 宽度的半透粉条。
     // 默认 false——进设置就显示条带太突兀；用户在 slider 旁手动开启「预览」后才覆盖到屏幕上。
     var insetPreviewActive by remember { mutableStateOf(false) }
@@ -268,8 +266,6 @@ fun SettingsScreen(
         floatingButtonSnapToEdge = floatingSnapEdge,
         floatingButtonAutoDock = floatingAutoDock,
         floatingButtonDockInsetDp = floatingDockInset.toInt(),
-        floatingButtonLandscapeEdgeFix = floatingLandscapeEdgeFix,
-        floatingButtonLandscapeEdgeFixDp = floatingLandscapeEdgeFixDp.roundToInt(),
         overlayAllowWrap = allowWrap,
         overlayAvoidCollision = avoidCollision,
         apiTimeoutSeconds = apiTimeoutSec.toInt(),
@@ -307,8 +303,6 @@ fun SettingsScreen(
             floatingButtonSnapToEdge = floatingSnapEdge,
             floatingButtonAutoDock = floatingAutoDock,
             floatingButtonDockInsetDp = floatingDockInset.toInt(),
-            floatingButtonLandscapeEdgeFix = floatingLandscapeEdgeFix,
-            floatingButtonLandscapeEdgeFixDp = floatingLandscapeEdgeFixDp.roundToInt(),
             allowWrap = allowWrap,
             avoidCollision = avoidCollision,
             apiTimeoutSeconds = apiTimeoutSec.toInt(),
@@ -689,8 +683,6 @@ fun SettingsScreen(
             floatingSnapEdge = s.floatingButtonSnapToEdge
             floatingAutoDock = s.floatingButtonAutoDock
             floatingDockInset = s.floatingButtonDockInsetDp.toFloat()
-            floatingLandscapeEdgeFix = s.floatingButtonLandscapeEdgeFix
-            floatingLandscapeEdgeFixDp = s.floatingButtonLandscapeEdgeFixDp.toFloat()
             pinnedLanguages = s.pinnedLanguages
             allowWrap = s.overlayAllowWrap
             avoidCollision = s.overlayAvoidCollision
@@ -1564,53 +1556,6 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.alpha(if (floatingSnapEdge) 1f else 0.4f)
-                )
-
-                // —— 横屏右侧吸附丢失修复（小众，放最后） ——
-                SwitchRow(
-                    stringResource(R.string.settings_floating_landscape_edge_fix_label),
-                    floatingLandscapeEdgeFix
-                ) { floatingLandscapeEdgeFix = it }
-                Text(
-                    stringResource(R.string.settings_floating_landscape_edge_fix_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                // 数值 + ± 1dp 精调按钮（Slider 拖动 ~1dp 精度有时打不准，按钮 fallback）
-                androidx.compose.foundation.layout.Row(
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().alpha(if (floatingLandscapeEdgeFix) 1f else 0.4f)
-                ) {
-                    Text(
-                        stringResource(R.string.settings_floating_landscape_edge_fix_dp_format, floatingLandscapeEdgeFixDp.roundToInt()),
-                        style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedButton(
-                        onClick = {
-                            floatingLandscapeEdgeFixDp = (floatingLandscapeEdgeFixDp.roundToInt() - 1).coerceAtLeast(0).toFloat()
-                        },
-                        enabled = floatingLandscapeEdgeFix,
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-                        modifier = Modifier.size(36.dp)
-                    ) { Text("−", style = MaterialTheme.typography.titleMedium) }
-                    androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
-                    OutlinedButton(
-                        onClick = {
-                            floatingLandscapeEdgeFixDp = (floatingLandscapeEdgeFixDp.roundToInt() + 1).coerceAtMost(80).toFloat()
-                        },
-                        enabled = floatingLandscapeEdgeFix,
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-                        modifier = Modifier.size(36.dp)
-                    ) { Text("+", style = MaterialTheme.typography.titleMedium) }
-                }
-                Slider(
-                    value = floatingLandscapeEdgeFixDp,
-                    // .roundToInt() 修 Compose Slider 浮点精度 bug：25/60 → 0.4166...f * 60 = 24.999... 直接 toInt 会跳过 25
-                    onValueChange = { floatingLandscapeEdgeFixDp = it.roundToInt().toFloat() },
-                    valueRange = 0f..80f,
-                    steps = 79,
-                    enabled = floatingLandscapeEdgeFix
                 )
             }
 

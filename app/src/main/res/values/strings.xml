@@ -387,9 +387,6 @@
     <string name="settings_floating_snap_edge_hint">After release, springs to the nearest edge and tucks 1/3 off-screen (idle, semi-transparent). Wakes up when pressed. Off: stays at release position with no tuck.</string>
     <string name="settings_floating_auto_dock_label">Auto-dock after 3s idle</string>
     <string name="settings_floating_auto_dock_hint">After the long-press menu closes, dock to the nearest edge if no further touch within 3s. Only effective when “Snap to edge” is on.</string>
-    <string name="settings_floating_landscape_edge_fix_label">Fix landscape right-edge dock disappearing</string>
-    <string name="settings_floating_landscape_edge_fix_hint">On some Chinese ROMs (Xiaomi HyperOS / MIUI etc.), the floating ball is hidden by the system when docked to the right edge in landscape. When enabled, snap/drag/arc-menu in landscape leave a symmetric margin (set below) to avoid the hidden zone.</string>
-    <string name="settings_floating_landscape_edge_fix_dp_format">Landscape edge margin: %1$d dp</string>
     <string name="settings_floating_dock_inset_format">Dock inset from physical edge: %1$d dp</string>
     <string name="settings_floating_dock_inset_hint">0 = flush against the system edge. Raise this to avoid full-gesture edge trigger zones.</string>
     <string name="settings_floating_dock_inset_preview_start">Show edge preview</string>

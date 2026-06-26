@@ -132,15 +132,11 @@ internal class LiquidFloatingContainer(context: Context) : FrameLayout(context) 
         if (ballRadius > 0f) {
             val cx = visualCx()
             val cy = height / 2f
-            android.util.Log.i("FBM", "LFC.draw side=$side w=$width h=$height " +
-                "ballR=$ballRadius cx=$cx cy=$cy alpha=$alpha visibility=$visibility")
             when (side) {
                 DockSide.NONE -> drawCircle(canvas, cx, cy)
                 DockSide.LEFT -> drawLiquid(canvas, cx, cy, edgeX = 0f, leftSide = true)
                 DockSide.RIGHT -> drawLiquid(canvas, cx, cy, edgeX = width.toFloat(), leftSide = false)
             }
-        } else {
-            android.util.Log.w("FBM", "LFC.draw SKIP ballR=$ballRadius w=$width h=$height side=$side")
         }
         super.dispatchDraw(canvas)
     }

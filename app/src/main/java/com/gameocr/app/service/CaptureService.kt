@@ -84,14 +84,6 @@ class CaptureService : Service() {
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
-        val ori = when (newConfig.orientation) {
-            android.content.res.Configuration.ORIENTATION_LANDSCAPE -> "LAND"
-            android.content.res.Configuration.ORIENTATION_PORTRAIT -> "PORT"
-            else -> "UND(${newConfig.orientation})"
-        }
-        android.util.Log.i("FBM", "Service.onConfigChanged orientation=$ori " +
-            "screenWdp=${newConfig.screenWidthDp} screenHdp=${newConfig.screenHeightDp} " +
-            "fbAlive=${floatingButton != null}")
         // 屏幕方向变了把圆球 clamp 到可见区域
         floatingButton?.onConfigurationChanged()
     }
@@ -181,8 +173,6 @@ class CaptureService : Service() {
             floatingButton?.snapToEdgeEnabled = s.floatingButtonSnapToEdge
             floatingButton?.autoDockEnabled = s.floatingButtonAutoDock
             floatingButton?.dockEdgeInsetPx = (s.floatingButtonDockInsetDp * resources.displayMetrics.density).toInt()
-            floatingButton?.landscapeEdgeFixEnabled = s.floatingButtonLandscapeEdgeFix
-            floatingButton?.landscapeEdgeFixPx = (s.floatingButtonLandscapeEdgeFixDp * resources.displayMetrics.density).toInt()
             mainScope.launch { floatingButton?.show() }
         }
 
@@ -642,8 +632,6 @@ class CaptureService : Service() {
             mainScope.launch { it.applySnapPreference(settings.floatingButtonSnapToEdge) }
             it.autoDockEnabled = settings.floatingButtonAutoDock
             it.dockEdgeInsetPx = (settings.floatingButtonDockInsetDp * resources.displayMetrics.density).toInt()
-            it.landscapeEdgeFixEnabled = settings.floatingButtonLandscapeEdgeFix
-            it.landscapeEdgeFixPx = (settings.floatingButtonLandscapeEdgeFixDp * resources.displayMetrics.density).toInt()
         }
     }
 

@@ -105,18 +105,6 @@ data class Settings(
      * 用来避开全面屏左右边手势触发区。
      */
     val floatingButtonDockInsetDp: Int = 0,
-    /**
-     * 横屏吸附右侧丢失修复（国产 ROM 兼容）。开启后**仅横屏**生效：吸附 / 拖动 clamp /
-     * 长按弧菜单的"可用屏宽"按 [25dp, screenW - 25dp] 计算，左右对称避开 HyperOS/MIUI
-     * 横屏强制隐藏屏物理边 25dp 内 system overlay 的行为。默认关，老用户 / 其它 ROM 不影响。
-     */
-    val floatingButtonLandscapeEdgeFix: Boolean = false,
-    /**
-     * 横屏右侧让出边距（dp，0–80）。仅在 [floatingButtonLandscapeEdgeFix] 开启 + 横屏时生效。
-     * 默认 42dp（HyperOS 13 Pro 实测正好贴右边）。**仅右侧让出**，左侧不变——HyperOS
-     * 横屏 hide 区只在屏 surface 右端，左端无 hide。
-     */
-    val floatingButtonLandscapeEdgeFixDp: Int = 42,
     /** 译文允许换行（关闭后强制单行，可能横向溢出但更紧凑）。 */
     val overlayAllowWrap: Boolean = true,
     /** 启用碰撞检测：上下左右四个方向都避免遮挡其它原文 box。 */
