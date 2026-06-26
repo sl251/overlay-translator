@@ -26,60 +26,60 @@ No ROOT, fully self-contained, designed for visual novels, manga, game dialogue 
 
 ## ✨ Features
 
-- **Capture**: MediaProjection + ImageReader (foreground service with `mediaProjection` type, Android 14+ compatible); optional Shizuku path to skip the per-session permission dialog
-- **Trigger**: tap the floating button for one-shot, long-press opens an arc menu (rotated fly-out animation, 0.85 alpha); loop mode every 2 s by default, dHash diff skips static frames, **skips a round while the previous overlay is still on screen** to avoid flicker; an outer ring on the floating ball visualises the countdown; optional accessibility service to bind **Vol+ and Vol- held together for 300 ms** as a global trigger
-- **Floating ball edge dock**: liquid "hugging" dock geometry (Dynamic Island-style); configurable inset from the physical screen edge (0–40 dp, dodges gesture zones, with live pink preview overlay); auto-dock after 3 s idle (optional)
-- **Region selection**: full-screen rubber-band, remembers the last region, avoids OCR noise from the rest of the screen
-- **OCR engines** (router, swap in settings; UI grouped **On-device / Cloud**):
-  - On-device: ML Kit (Latin / Japanese / Chinese / Korean, AUTO switches by character set), PaddleOCR PP-OCRv5 mobile (ONNX Runtime)
-  - Cloud: Baidu OCR (5 endpoints) / Tencent OCR (incl. RecognizeAgent LLM-augmented OCR with ParagNo paragraph grouping) / Youdao OCR (ocrapi, single-tap setup)
-- **Source language ↔ OCR linkage**: when you change source language, the app checks whether the current OCR engine can recognize it; if not it recommends a better engine; if you're on cloud OCR with a generic language mode but a precise one is available, it offers an upgrade. The reverse also works: if you change the OCR side, it suggests adjusting source language to match — instead of undoing what you just did.
-- **Translation engines** (router + **Test connection** button):
-  - OpenAI-compatible chat completions (DeepSeek / SiliconFlow / Zhipu / Ollama / OpenAI …) with SSE streaming; Test fetches the model list to populate a picker
-  - DeepL (free / Pro auto-detected; Test returns current month's used / total character quota) + **self-hosted deeplx support**: protocol selector (official / deeplx / auto fallback), independent Custom Token field that prevents the official key from being leaked to third parties, Bearer / DeepL-Auth-Key auto-pick
-  - **Youdao PicTrans** (ocrtransapi, end-to-end: ships the full screenshot, returns translated regions in one call — **bypasses the OCR engine setting**; auto-rotates box coordinates by orientation)
-  - **Google** (unofficial endpoint, no key required; proxy required inside mainland China)
-- **Overlay**:
-  - Two render modes: per OCR boundingBox (glued to source text) / single bottom banner
-  - 5 built-in themes (Classic Dark / Amber Gold / Paper Light / Frost Glass / Custom) + font size, opacity, border, offset
-  - Smart collision avoidance with neighbouring OCR boxes; wrap or compact single line (long translations in single-line mode auto-scroll via Marquee instead of "…" truncation)
-  - **Merge adjacent OCR boxes** (essential for comics / subtitles): OCR engines often split one sentence into several adjacent boxes; merging them before translation eliminates overlay overlap
-    - **Orientation detection** (per-box portrait ratio → H/V) + mirrored horizontal/vertical merge
-    - Vertical Japanese: right-to-left column ordering
-    - **Furigana (ふりがな) filtering**: narrow ruby-text columns adjacent to a wider kanji column are dropped to avoid duplicated translation like "shippai / 失败"
-    - Three strengths (Conservative / Standard / Aggressive) for different layouts
-  - LRU translation cache, hits skip token cost
-- **Image preprocessing**: 2× upscale, color invert, Otsu binarize (for low-contrast / white-on-dark / colored noise)
-- **The app itself**:
-  - English / 简体中文 UI + Light / Dark / Follow-system theme, both apply instantly
-  - In-settings search (matches both Chinese and English keywords)
-  - All API Key / Secret fields use password masking with show/hide toggle
-  - **Update check**: auto on app open (throttled 24 h) + manual button; calls GitHub Releases API directly, falls back to "Open release page" if the API is unreachable
-  - **Crash recorder**: uncaught exceptions + native crashes / ANR / OOM kill (Android 11+) are stored with device info + a redacted settings snapshot + the stacktrace, viewable / exportable from the log screen after restart
-  - Vendor ROM compatibility shortcuts (auto-start / battery whitelist for Xiaomi / OPPO / VIVO / Huawei / Samsung)
-  - **Cleartext HTTP locked to private subnets**: only LAN / 127.0.0.1 / link-local can use `http://` by default; public hosts must use HTTPS. Extra hosts can be whitelisted in the "Network" section
-  - **i18n fallback fix**: untranslated system languages (Uyghur, Hindi, etc.) now fall back to English instead of accidentally showing Chinese
+### 🎯 In one line
+
+Game / manga / visual novel on screen → tap the floating ball → translation appears overlaid on the source text in a couple of seconds.
+
+### 🖱️ How to trigger
+
+- **Floating ball**: tap for one-shot translation; long-press opens an arc menu (loop translate / re-pick region / back to main app)
+- **Loop mode**: auto-translate every 2 s; static frames are skipped automatically — read a novel without lifting your finger
+- **Volume two-key**: hold **Vol+ and Vol−** together for 0.3 s to trigger; your hands stay on the game (requires enabling the bundled accessibility service)
+
+### 🔍 OCR (read the text on screen)
+
+- **On-device**: ML Kit (CJK + Latin) / PaddleOCR — your screenshots never leave the phone; works offline
+- **Cloud**: Baidu / Tencent / Youdao — fall back to these when on-device misreads
+- When you switch source language, the app checks whether the current OCR engine can read it; if not, it suggests a better one
+
+### 🌐 Translation engines
+
+- **LLMs**: DeepSeek / ChatGPT / Zhipu / self-hosted models… streamed token by token, no waiting for the whole reply
+- **DeepL**: free / Pro plan auto-detected, **supports self-hosted [deeplx](https://github.com/OwO-Network/DeepLX)** (open-source proxy, run on your own server, no key needed); pick between Official / deeplx / Auto-fallback
+- **Youdao Pic-Trans**: skips the OCR step entirely — send the screenshot, get back boxes with translations. Great for comics.
+- **Google**: no key, free (proxy required inside mainland China)
+- Every engine has a **Test connection** button; DeepL additionally reports remaining monthly free quota
+
+### 🎨 How the overlay looks
+
+- **Two placements**: stuck to the source text, or a single banner at the bottom of the screen
+- **5 color themes** + font size, opacity, border — all tweakable
+- **Comic / subtitle optimizations**: sentences split across multiple OCR boxes get merged before translating; vertical Japanese is read right-to-left; tiny ruby-text columns (furigana) next to kanji are filtered out so you don't get duplicate translations
+- **Marquee for long lines**: in single-line mode, long translations scroll horizontally instead of being truncated with "…"
+
+### 🛠️ Small conveniences
+
+- **English / 简体中文 UI + Light / Dark / Follow-system theme**, applies instantly
+- **In-settings search**: can't find an option? Search in either language at the top of the settings page
+- **Translation cache**: identical lines don't burn through your API quota twice
+- **Auto-saved crash reports**: if the app crashes or freezes, the next launch lets you view and export a sanitized report in one tap
+- **Update prompt**: checks for new versions when you open the home screen (at most once a day); offers a direct link if GitHub is unreachable
+- **Chinese-ROM background guides**: shortcuts to auto-start / battery whitelist settings for Xiaomi / OPPO / VIVO / Huawei / Samsung devices that aggressively kill background services
+- **Privacy default**: cleartext HTTP is only allowed inside your LAN by default; public hosts must use HTTPS
 
 ## 📊 Comparison with similar apps
 
 > Rough reference compiled from publicly available info in 2026; the other apps may have moved on. PRs welcome to correct.
 
-Focused on the "game / manga on-screen translation" niche:
-
-| Aspect | **Screen Translator (this)** | Gaminik (proprietary) | Aiyike (proprietary) | Google Translate | Immersive Translate |
-|---|---|---|---|---|---|
-| Free / no ads | ✅ | Subscription | In-app purchase | ✅ | ✅ |
-| Open source | ✅ Apache 2.0 | ❌ | ❌ | ❌ | Partial |
-| **Floating-ball overlay translation** | ✅ liquid dock | ✅ | ✅ | ❌ | ❌ (weak on mobile) |
-| On-device OCR (no image upload) | ✅ ML Kit / PaddleOCR | ❌ (cloud-first) | ❌ (cloud-first) | ✅ | ❌ |
-| Pluggable OCR engines | ✅ 8 options | Limited | Limited | ❌ (own only) | ❌ |
-| Pluggable translation engines | ✅ 5+ incl. LLM | Limited | Limited | ❌ (own only) | ✅ |
-| Self-hosted backend (deeplx etc.) + AUTO fallback | ✅ | ❌ | ❌ | ❌ | ❌ |
-| LLM translation (GPT / DeepSeek / Ollama / self-host) + SSE streaming | ✅ | Partial | Partial | ❌ | ✅ |
-| Shizuku capture (skip per-session permission dialog) | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Manga / subtitle OCR paragraph merge (incl. vertical, furigana filter) | ✅ 3 strengths | ❌ | ❌ | ❌ | ❌ |
-| Strict isolation of official key vs. third-party token | ✅ separate Custom Token | — | — | — | — |
-| Cleartext HTTP restricted to private subnets + whitelist | ✅ | — | — | — | — |
+| Aspect | **Screen Translator (this)** | Gaminik / Aiyike (same codebase, proprietary) | Google Translate | Immersive Translate |
+|---|---|---|---|---|
+| Free / no ads | ✅ | Subscription or IAP | ✅ | ✅ |
+| Open source | ✅ Apache 2.0 | ❌ | ❌ | Partial |
+| Floating-ball overlay translation | ✅ | ✅ | ❌ | ❌ (weak on mobile) |
+| On-device OCR (no image upload) | ✅ | ❌ (cloud-first) | ✅ | ❌ |
+| Pluggable OCR + translation engines (incl. LLM) | ✅ | Limited | ❌ | Translation only |
+| Self-hosted backend (deeplx / local LLM) | ✅ | ❌ | ❌ | ❌ |
+| Comic vertical / furigana / subtitle paragraph merge | ✅ | ❌ | ❌ | ❌ |
 
 **Positioning**: in the "game / manga on-screen translation" niche, be the only one that is **open source + on-device-engine-capable + self-host-friendly**. The differentiation against incumbents lives in *privacy / self-hosting / engine choice*, not in OCR or translation quality itself (anyone can plug into the same cloud OCR and DeepL/LLM engines).
 
@@ -103,9 +103,11 @@ Focused on the "game / manga on-screen translation" niche:
 
 **Settings**:
 
-| App language / theme / translator | OCR engine / preprocessing | Overlay style preview |
-|---|---|---|
-| <img src="docs/screenshots/settings-top.png" width="240" alt="Settings top" /> | <img src="docs/screenshots/settings-ocr.png" width="240" alt="OCR engine settings" /> | <img src="docs/screenshots/settings-display.png" width="240" alt="Overlay display settings" /> |
+| App language / theme / translator | OCR engine / preprocessing |
+|---|---|
+| <img src="docs/screenshots/settings-top.png" width="280" alt="Settings top" /> | <img src="docs/screenshots/settings-ocr.png" width="280" alt="OCR engine settings" /> |
+| **Overlay style preview** | **Box merge / floating ball** |
+| <img src="docs/screenshots/settings-display.png" width="280" alt="Overlay display settings" /> | <img src="docs/screenshots/settings-floating.png" width="280" alt="Box merge & floating ball settings" /> |
 
 ## 📦 Install
 
@@ -113,7 +115,9 @@ Focused on the "game / manga on-screen translation" niche:
 2. Tap it on your Android device (first time you'll need to allow "Install unknown apps" in system settings)
 3. Grant **Overlay** and **Notification** permissions on first launch
 
-Only `arm64-v8a` is published. Each APK ships with a `.sha256` so you can verify integrity against `Get-FileHash` / `sha256sum`.
+Only **`arm64-v8a` (64-bit ARM)** is published. armeabi-v7a / x86 are **not supported for now** — on-device OCR engines (PaddleOCR / ML Kit) ship large native libs, and 32-bit ARM lacks 64-bit NEON optimizations and has fewer registers, making inference noticeably slower and OCR wait times much longer. If you have a 32-bit device that needs this, please open an issue.
+
+Each APK ships with a `.sha256` so you can verify integrity against `Get-FileHash` / `sha256sum`.
 
 ## 🚀 Usage
 
@@ -193,11 +197,22 @@ You can override the mirror URL in settings, or import the files manually from l
 
 ## 🗺️ Roadmap
 
-- **M0**: MediaProjection capture + ML Kit + PaddleOCR + OpenAI-compatible translation + floating button + bottom banner
-- **M1**: region persistence, SSE streaming, per-boundingBox overlay rendering, ROM guidance, i18n (zh / en) + Light / Dark theme, in-settings search
-- **M2**: Korean ML Kit, dual-volume-key global trigger, source-language ↔ OCR linkage, three-strength adjacent box merging, loop progress ring, crash recorder + log screen, GitHub Releases update check
-- **M3 (current · 0.3.0)**: "Test connection" on all translator engines; Youdao OCR + Youdao PicTrans end-to-end engine; Google translation (unofficial); Tencent RecognizeAgent with ParagNo grouping; OCR merge orientation detection + furigana filtering; Shizuku release fix (R8 keep); loop mode skips when overlay is active; long single-line translations use Marquee scroll
-- **M4**: inpainting-style overlay blending (color sampling + adaptive font size); on-device manga-ocr (kha-white, Japanese manga, reuses PaddleOCR DBNet); custom translation fonts (bundled + user-uploaded .ttf); Shizuku advanced path (UserService + aidl); chat history / TTS / glossaries
+### ✅ Done
+
+- [x] **Core pipeline** (M0): capture → OCR → translation → overlay, end-to-end
+- [x] **UX polish** (M1): region memory, streamed translation, source-glued rendering, ROM guides, EN/CN UI + light/dark themes, in-settings search
+- [x] **Smarts & stability** (M2): Korean recognition, volume two-key global trigger, source-lang ↔ OCR linkage hints, paragraph merge with 3 strengths, loop progress ring, auto-saved crash reports, update prompts
+- [x] **Engine expansion** (M3 · 0.3.x): test-connection button on every engine, Youdao OCR + PicTrans, Google translate, Tencent agent paragraph grouping, furigana filter, marquee scrolling for long lines
+
+### 📋 Planned
+
+- [ ] Background-aware overlay (auto color + adaptive font size, replacing the solid rectangle)
+- [ ] On-device manga-specific OCR (manga-ocr model)
+- [ ] Custom overlay fonts (upload your own .ttf)
+- [ ] Advanced Shizuku path (more robust no-permission-dialog capture)
+- [ ] Translation conversation history
+- [ ] Text-to-speech for translations
+- [ ] Glossary (fixed translations for names / items)
 
 ## 🤝 Contributing
 
@@ -219,6 +234,18 @@ Contributions of any kind — bug fixes, features, UI polish, translations, doc 
 3. **Develop and test locally** (at least `./gradlew installDebug` on a real device)
 4. **Open the PR against `dev`** (if `dev` doesn't exist yet, ping the maintainer in the issue to create it). The maintainer aggregates multiple PRs on `dev`, retests, then merges into `main`
 5. **Direct push / force-push to `main` is forbidden** (enforced by branch protection)
+
+### Build locally
+
+```bash
+git clone https://github.com/ciddwd/overlay-translator.git
+cd overlay-translator
+cp local.properties.example local.properties
+# Edit local.properties and point sdk.dir at your local Android SDK
+./gradlew installDebug   # installs onto the connected device
+```
+
+Requires JDK 17 + Android SDK 35. Opening the project in Android Studio auto-syncs and fills in the Gradle wrapper jar; on a bare CLI environment, run `gradle wrapper --gradle-version 8.10.2` first.
 
 ### Translation contributions
 
@@ -284,162 +311,3 @@ PC tools in the VNR / Visual Novel Reader family have served galgame / VN player
 
 Code is licensed under [Apache-2.0](LICENSE). Models and third-party dependencies retain their own licenses.
 
----
-
-# 🛠️ Developer guide
-
-Build / debug / release details for contributors. End users only need the APK from [Releases](../../releases) — skip this section.
-
-## Tech stack
-
-- Kotlin 2.x · Jetpack Compose · Hilt
-- Android `minSdk 26` / `targetSdk 35` (runs on Android 8.0+, best on 10+)
-- Retrofit + OkHttp + kotlinx.serialization
-- DataStore (business settings) + SharedPreferences (theme / locale — anything needing sync read) + Room (cache)
-- ONNX Runtime Android (PaddleOCR on-device)
-- ML Kit on-device text recognition
-- Shizuku API
-
-## Project layout
-
-```
-app/src/main/java/com/gameocr/app/
-  capture/    Screenshotter interface + MediaProjection / Shizuku impls + region selection + frame diff
-  ocr/        OcrEngine interface + ML Kit / PaddleOCR / Baidu / Tencent / Youdao + RoutingOcrEngine (H/V orientation detection, furigana filter, paragraph clustering)
-  translate/  Translator interface + OpenAI / DeepL / Youdao PicTrans (end-to-end) / Google (unofficial) + LRU cache + RoutingTranslator
-  overlay/    Floating button + translation / loading / error overlays
-  service/    CaptureService foreground service (capture → OCR → translate → render orchestrator)
-  trigger/    Accessibility service (optional volume-key trigger)
-  shizuku/    Shizuku permission + IBinder bridge
-  rom/        Vendor ROM compatibility shortcuts (Xiaomi / OPPO / VIVO / Huawei / Samsung)
-  data/       Settings model + DataStore repository + ThemeModePrefs + AppLocalePrefs
-  di/         Hilt modules
-  ui/         MainActivity + MainScreen + SettingsScreen + LogScreen + Compose theme
-
-app/src/main/res/
-  values/                Default (zh-CN) strings.xml + themes.xml + colors.xml
-  values-en/             English strings.xml
-  xml/locales_config.xml Per-app locales the app supports (Android 13+)
-
-tools/local_ocr_debug/  Python scripts mirroring the Android PaddleOCR pipeline on PC (see "Development & debugging")
-.github/workflows/      CI: push tag → auto release
-```
-
-## Build
-
-### Prerequisites
-
-- Android Studio Ladybug (2024.2) or newer; JDK 17 (bundled with Android Studio)
-- Android SDK 35 (compileSdk) + Build-Tools 34+
-- Device / emulator: Android 8.0 (API 26) or higher
-
-### Clone & configure
-
-```bash
-git clone https://github.com/ciddwd/overlay-translator.git
-cd overlay-translator
-cp local.properties.example local.properties
-# Edit local.properties and point sdk.dir at your local Android SDK
-```
-
-### Generate the Gradle wrapper jar
-
-The repo intentionally does not commit `gradle/wrapper/gradle-wrapper.jar`. Two options to obtain it:
-
-- **Option A (recommended)**: open the project in Android Studio; the IDE downloads the wrapper as part of sync
-- **Option B**: if you already have Gradle 8.10+ installed, run `gradle wrapper --gradle-version 8.10.2` from the repo root
-
-### Compile
-
-```bash
-./gradlew assembleDebug          # output: app/build/outputs/apk/debug/app-debug.apk
-./gradlew installDebug           # install directly to a connected device
-```
-
-Only `arm64-v8a` is built (see `ndk.abiFilters` in `app/build.gradle.kts`; 32-bit and x86 are skipped to keep the APK small).
-
-## Development & debugging
-
-### PaddleOCR local tuning
-
-`tools/local_ocr_debug/` ships Python scripts that reproduce the Android PaddleOCR pipeline 1:1 on PC for offline tuning and regression:
-
-```bash
-# 1. Pull the on-device ONNX models
-adb exec-out "run-as com.gameocr.app.debug cat files/models/paddle/det.onnx" > tools/local_ocr_debug/models/det.onnx
-adb exec-out "run-as com.gameocr.app.debug cat files/models/paddle/rec.onnx" > tools/local_ocr_debug/models/rec.onnx
-adb exec-out "run-as com.gameocr.app.debug cat files/models/paddle/keys.txt" > tools/local_ocr_debug/models/keys.txt
-
-# 2. Grab a test screenshot
-adb exec-out screencap -p > sample.png
-
-# 3. Run it through the same algorithm as Android
-pip install onnxruntime pillow numpy opencv-python-headless pyclipper shapely
-python tools/local_ocr_debug/run_v3_kotlin_equiv.py sample.png
-```
-
-`sample.png.v3.png` is a debug visualization with detected boxes overlaid; the console prints per-box position, average score and recognized text.
-
-There's also `run_v2.py` (PaddleOCR upstream baseline; depends on cv2 + pyclipper) for evaluating changes against the official implementation.
-
-## Release
-
-Push a tag → CI builds → APK is uploaded to GitHub Releases. `.github/workflows/release.yml` triggers on `push tag v*`, runs `assembleRelease`, and attaches the signed APK + sha256 to the matching Release.
-
-### One-time: signing keystore and GitHub Secrets
-
-```bash
-# Generate a release keystore locally (pick your own passwords / alias, keep them safe)
-keytool -genkeypair -v \
-  -keystore release.jks \
-  -keyalg RSA -keysize 2048 -validity 36500 \
-  -alias gameocr \
-  -storepass <STORE_PASSWORD> -keypass <KEY_PASSWORD> \
-  -dname "CN=GameOcr, OU=, O=, L=, ST=, C=CN"
-
-# Encode to base64 for GitHub Secrets (macOS/Linux: base64 -w0 release.jks)
-certutil -encode release.jks release.jks.b64   # Windows
-# Copy the content between -----BEGIN/END----- (line breaks are fine)
-```
-
-Add 4 secrets under **Settings → Secrets and variables → Actions**:
-
-| Secret | Content |
-|---|---|
-| `RELEASE_KEYSTORE_BASE64` | the base64 string from above |
-| `RELEASE_KEYSTORE_PASSWORD` | keystore password |
-| `RELEASE_KEY_ALIAS` | the value after `-alias`, e.g. `gameocr` |
-| `RELEASE_KEY_PASSWORD` | key password (may equal the keystore password) |
-
-> ⚠ **Never commit `release.jks`** — verify `*.jks` and `*.keystore` are in `.gitignore`.
-
-### Release flow
-
-```bash
-# 1. Bump versionName / versionCode in app/build.gradle.kts on main
-# 2. Push a tag
-git tag v0.3.0
-git push origin v0.3.0
-
-# 3. Watch the Release workflow in the Actions tab
-#    Once green, ScreenTranslator-0.2.0.apk and .sha256 land on the Releases page
-```
-
-Common CI failures:
-
-- **Missing secrets**: the workflow's first step says `Secret RELEASE_KEYSTORE_BASE64 is not set`
-- **Base64 decode error**: stray newlines / missing characters; run `base64 -d` locally to validate
-- **Wrong signing password**: double-check what you passed to `-storepass` / `-keypass`; alias is case-sensitive
-
-You can reproduce the same flow locally:
-
-```bash
-export RELEASE_KEYSTORE_PATH=/path/to/release.jks
-export RELEASE_KEYSTORE_PASSWORD=<STORE_PASSWORD>
-export RELEASE_KEY_ALIAS=gameocr
-export RELEASE_KEY_PASSWORD=<KEY_PASSWORD>
-./gradlew clean assembleRelease
-# Output: app/build/outputs/apk/release/app-release.apk
-```
-
-When `RELEASE_KEYSTORE_PATH` is unset, `assembleRelease` succeeds but produces an unsigned APK that can't be installed directly. For day-to-day dev, `assembleDebug` is enough.
