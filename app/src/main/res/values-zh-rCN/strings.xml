@@ -387,6 +387,9 @@
     <string name="settings_floating_snap_edge_hint">松手后弹性贴边并 1/3 藏到屏外（待机半透明），按下时自动唤醒拉回。关闭后松手停在原位、不藏边。</string>
     <string name="settings_floating_auto_dock_label">3 秒无操作自动贴边</string>
     <string name="settings_floating_auto_dock_hint">长按菜单关闭后若 3 秒内未再次触摸悬浮球，自动吸到最近边。仅在「悬浮球吸附边缘」开启时生效。</string>
+    <string name="settings_floating_landscape_edge_fix_label">横屏右侧吸附丢失修复</string>
+    <string name="settings_floating_landscape_edge_fix_hint">部分国产 ROM（小米 HyperOS / MIUI 等）横屏时悬浮球贴右会被系统隐藏。开启后横屏吸附 / 拖动 / 弧菜单都让出下方设定的边距，对称避开隐藏区。</string>
+    <string name="settings_floating_landscape_edge_fix_dp_format">横屏让出边距：%1$d dp</string>
     <string name="settings_floating_dock_inset_format">贴边距屏幕实际边缘距离：%1$d dp</string>
     <string name="settings_floating_dock_inset_hint">0 = 紧贴系统边。增大可避开全面屏左右边手势触发区。</string>
     <string name="settings_floating_dock_inset_preview_start">显示边距预览</string>

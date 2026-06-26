@@ -12,7 +12,6 @@ import android.os.IBinder
 import androidx.core.app.ServiceCompat
 import com.gameocr.app.R
 import com.gameocr.app.capture.CaptureRegion
-import com.gameocr.app.capture.FrameDeduper
 import com.gameocr.app.capture.MediaProjectionScreenshotter
 import com.gameocr.app.capture.Screenshotter
 import com.gameocr.app.capture.ShizukuScreenshotter
@@ -74,7 +73,6 @@ class CaptureService : Service() {
     private var overlay: OverlayManager? = null
     private var regionPicker: RegionPickerOverlay? = null
 
-    private val deduper = FrameDeduper()
     private var loopJob: Job? = null
     // 订阅 SettingsRepository.settings flow，让设置页保存后所有显示项立即生效
     // （悬浮按钮大小、配色主题、字号、透明度、紧贴文位置 …）。原先只在 captureOnce
@@ -86,6 +84,14 @@ class CaptureService : Service() {
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
+        val ori = when (newConfig.orientation) {
+            android.content.res.Configuration.ORIENTATION_LANDSCAPE -> "LAND"
+            android.content.res.Configuration.ORIENTATION_PORTRAIT -> "PORT"
+            else -> "UND(${newConfig.orientation})"
+        }
+        android.util.Log.i("FBM", "Service.onConfigChanged orientation=$ori " +
+            "screenWdp=${newConfig.screenWidthDp} screenHdp=${newConfig.screenHeightDp} " +
+            "fbAlive=${floatingButton != null}")
         // 屏幕方向变了把圆球 clamp 到可见区域
         floatingButton?.onConfigurationChanged()
     }
@@ -175,6 +181,8 @@ class CaptureService : Service() {
             floatingButton?.snapToEdgeEnabled = s.floatingButtonSnapToEdge
             floatingButton?.autoDockEnabled = s.floatingButtonAutoDock
             floatingButton?.dockEdgeInsetPx = (s.floatingButtonDockInsetDp * resources.displayMetrics.density).toInt()
+            floatingButton?.landscapeEdgeFixEnabled = s.floatingButtonLandscapeEdgeFix
+            floatingButton?.landscapeEdgeFixPx = (s.floatingButtonLandscapeEdgeFixDp * resources.displayMetrics.density).toInt()
             mainScope.launch { floatingButton?.show() }
         }
 
@@ -331,11 +339,6 @@ class CaptureService : Service() {
                 return
             }
             if (workBitmap !== full) full.recycle()
-
-            if (loopMode && deduper.shouldSkip(workBitmap)) {
-                workBitmap.recycle()
-                return
-            }
 
             // 端到端引擎（有道图片翻译）：跳过 OCR 阶段，直接拿带译文的 box；不走 mergeAdjacentBlocks
             // 也不走后续 translateOne，因为译文已经在 region 粒度上对齐好了。
@@ -639,6 +642,8 @@ class CaptureService : Service() {
             mainScope.launch { it.applySnapPreference(settings.floatingButtonSnapToEdge) }
             it.autoDockEnabled = settings.floatingButtonAutoDock
             it.dockEdgeInsetPx = (settings.floatingButtonDockInsetDp * resources.displayMetrics.density).toInt()
+            it.landscapeEdgeFixEnabled = settings.floatingButtonLandscapeEdgeFix
+            it.landscapeEdgeFixPx = (settings.floatingButtonLandscapeEdgeFixDp * resources.displayMetrics.density).toInt()
         }
     }
 
@@ -659,7 +664,6 @@ class CaptureService : Service() {
         screenshotter = null
         projection?.stop()
         projection = null
-        deduper.reset()
     }
 
     override fun onDestroy() {

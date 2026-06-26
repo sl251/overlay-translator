@@ -71,7 +71,52 @@ class FloatingButtonManager(
     /** 当前是否处于循环模式（影响菜单第一项的视觉指示）。由 CaptureService 通过 setLoopActive 同步。 */
     @Volatile private var isLooping: Boolean = false
 
-    private val wm by lazy { context.getSystemService(Context.WINDOW_SERVICE) as WindowManager }
+    /**
+     * 国产 ROM 横屏右侧吸附丢失修复开关（由 Settings 注入）。
+     * true 时**横屏**下所有边界算法（snap / clamp / drag / leave / wake / 弧菜单）的"可用屏宽"
+     * 视为 [LANDSCAPE_EDGE_FIX_DP, screenW - LANDSCAPE_EDGE_FIX_DP]，左右对称避开
+     * HyperOS/MIUI 横屏强制隐藏屏物理边 25dp 内 system overlay 的行为。
+     * 竖屏 / 关闭时返回 0，行为与老版本一致。
+     */
+    @Volatile var landscapeEdgeFixEnabled: Boolean = false
+    /**
+     * 横屏让出边距（px）。由 CaptureService 从 Settings 的 dp 值乘 density 注入。
+     * 仅在 [landscapeEdgeFixEnabled] = true 且当前横屏时生效。
+     */
+    @Volatile var landscapeEdgeFixPx: Int = 0
+
+    /**
+     * Service / Application context 的默认 WindowManager 不跟随屏幕旋转（旋转后 currentWindowMetrics
+     * 仍返回构造时方向）。Android 11+ 用 `createWindowContext(display, type, ...)` 拿一个
+     * **挂在指定 display 上的 context**，其 WindowManager 会跟随该 display 当前方向。
+     * API < 30 没这个 API，退回默认 wm（横竖屏切换时有 known limitation）。
+     */
+    private val wm: WindowManager by lazy { createDisplayBoundWm() }
+
+    private fun createDisplayBoundWm(): WindowManager {
+        val defaultWm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            android.util.Log.i("FBM", "wm=defaultWm (API<30)")
+            return defaultWm
+        }
+        return runCatching {
+            val dm = context.getSystemService(Context.DISPLAY_SERVICE) as android.hardware.display.DisplayManager
+            val display = dm.getDisplay(android.view.Display.DEFAULT_DISPLAY)
+                ?: run { android.util.Log.i("FBM", "wm=defaultWm (display null)"); return@runCatching defaultWm }
+            val windowContext = context.createWindowContext(display, overlayType, null)
+            val w = windowContext.getSystemService(WindowManager::class.java)
+            if (w != null) {
+                android.util.Log.i("FBM", "wm=windowContextWm OK")
+                w
+            } else {
+                android.util.Log.i("FBM", "wm=defaultWm (svc null)")
+                defaultWm
+            }
+        }.getOrElse {
+            android.util.Log.e("FBM", "createWindowContext failed", it)
+            defaultWm
+        }
+    }
     private var view: View? = null
     private var layoutParams: WindowManager.LayoutParams? = null
     private var progressView: LoopProgressView? = null
@@ -149,6 +194,7 @@ class FloatingButtonManager(
         progressView = progress
 
         val (screenW, screenH) = currentScreenSize()
+        val romFix = landscapeFixFor(screenW, screenH)
 
         val params = WindowManager.LayoutParams(
             containerW, containerH,
@@ -159,13 +205,17 @@ class FloatingButtonManager(
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             if (initialX >= 0 && initialY >= 0) {
-                x = initialX.coerceIn(0, (screenW - containerW).coerceAtLeast(0))
+                x = initialX.coerceIn(romFix, (screenW - containerW - romFix).coerceAtLeast(romFix))
                 y = initialY.coerceIn(0, (screenH - containerH).coerceAtLeast(0))
             } else {
-                x = (16 * density).toInt()
+                x = (16 * density).toInt() + romFix
                 y = (screenH / 4).coerceIn(containerH, screenH - containerH * 2)
             }
         }
+
+        android.util.Log.i("FBM", "show screenW=$screenW screenH=$screenH " +
+            "containerW=$containerW containerH=$containerH " +
+            "initialX=$initialX initialY=$initialY → params.x=${params.x} params.y=${params.y}")
 
         attachTouchListener(container, params)
         wm.addView(container, params)
@@ -195,24 +245,119 @@ class FloatingButtonManager(
         runCatching { wm.updateViewLayout(container, params) }
     }
 
-    /** 屏幕方向变了：把球重新 clamp 进可见区域。 */
+    /**
+     * 屏幕方向变了：clamp 进新方向的可视区，dock 状态下重新 snap。
+     *
+     * A 路径（API 30+）：wm 是 display-bound 的，旋转自动反映在 `currentWindowMetrics`，本函数
+     * 只负责把 X/Y 拉回合理范围 + re-dock。
+     *
+     * C 路径（API < 30）：服务持有的默认 wm 不一定感知旋转。理论上这里可以 removeView + addView
+     * 强制 wm 重绑定，但默认 wm 的 internal state 也未必随之更新——老 API 是 known limitation，
+     * 还是同样的 clamp + re-dock，best effort。
+     */
     fun onConfigurationChanged() {
-        val params = layoutParams ?: return
-        val v = view ?: return
+        val params = layoutParams ?: run {
+            android.util.Log.w("FBM", "onConfigurationChanged: layoutParams null, skip")
+            return
+        }
+        val v = view ?: run {
+            android.util.Log.w("FBM", "onConfigurationChanged: view null, skip")
+            return
+        }
+        val oldX = params.x
+        val oldY = params.y
+        val oldW = params.width
+        val oldH = params.height
+        val oldDock = dockSide
         val (screenW, screenH) = currentScreenSize()
-        params.x = params.x.coerceIn(0, screenW - params.width)
+        val romFix = landscapeFixFor(screenW, screenH)
+        params.x = params.x.coerceIn(romFix, (screenW - params.width - romFix).coerceAtLeast(romFix))
         params.y = params.y.coerceIn(0, screenH - params.height)
+        android.util.Log.i("FBM", "onConfigChanged dock=$oldDock " +
+            "old(x=$oldX y=$oldY w=$oldW h=$oldH) screenW=$screenW screenH=$screenH " +
+            "→ clamped(x=${params.x} y=${params.y})")
         runCatching { wm.updateViewLayout(v, params) }
+        // post 到下一帧再 snap：测一次"延迟刷新"后的 currentScreenSize，
+        // 用来判断是不是 onConfigurationChanged 到达时 wm 尺寸还没切过来
+        v.post {
+            val (postW, postH) = currentScreenSize()
+            android.util.Log.i("FBM", "onConfigChanged.post screenW=$postW screenH=$postH " +
+                "dock=$dockSide params(x=${params.x} y=${params.y}) → ${if (dockSide != DockSide.NONE) "snapToEdge" else "skip"}")
+            if (dockSide != DockSide.NONE) snapToEdge()
+        }
     }
 
+    /**
+     * 拿当前**实际显示方向**的屏幕尺寸。API 30+ 走 `wm.currentWindowMetrics`（wm 是 display-bound
+     * 的，跟随旋转）；老 API fallback 走 `view.display.getRealMetrics()`。
+     */
     private fun currentScreenSize(): Pair<Int, Int> {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val b = wm.currentWindowMetrics.bounds
-            b.width() to b.height()
-        } else {
-            val dm = context.resources.displayMetrics
-            dm.widthPixels to dm.heightPixels
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val cur = wm.currentWindowMetrics.bounds
+            val max = wm.maximumWindowMetrics.bounds
+            val rot = view?.display?.rotation ?: -1
+            val viewMx = view?.display?.let {
+                val m = android.util.DisplayMetrics()
+                @Suppress("DEPRECATION") it.getRealMetrics(m)
+                "${m.widthPixels}x${m.heightPixels}"
+            } ?: "n/a"
+            val ori = context.resources.configuration.orientation
+            android.util.Log.i("FBM", "cur=${cur.width()}x${cur.height()} " +
+                "max=${max.width()}x${max.height()} viewDisp=$viewMx " +
+                "rotation=$rot orientation=$ori")
+            return cur.width() to cur.height()
         }
+        @Suppress("DEPRECATION")
+        val display = view?.display ?: wm.defaultDisplay
+        val metrics = android.util.DisplayMetrics()
+        @Suppress("DEPRECATION")
+        display.getRealMetrics(metrics)
+        return metrics.widthPixels to metrics.heightPixels
+    }
+
+    /**
+     * 横屏右侧吸附丢失修复——返回左右两侧应让出的"ROM 隐藏区"宽度（px）。
+     * 仅 [landscapeEdgeFixEnabled] = true 且当前 screenW > screenH 时返回 [landscapeEdgeFixPx]，
+     * 否则 0。左右对称（HyperOS 横屏 surface 两端都 hide）。
+     */
+    private fun landscapeFixFor(screenW: Int, screenH: Int): Int {
+        if (!landscapeEdgeFixEnabled) return 0
+        if (screenW <= screenH) return 0
+        return landscapeEdgeFixPx.coerceAtLeast(0)
+    }
+
+    /**
+     * 返回系统 bar（status / nav）+ 挖孔的占位（left, top, right, bottom）px。
+     * 横屏 3-button nav 会让右/左有非零值，影响"贴边距 inset" 的真实可见区。
+     * Android 11+ 走 WindowInsets API；老版本只能返回零（fallback 走 statusBarSafe/navBarSafe 常量）。
+     */
+    private fun systemInsetsLtrb(): IntArray {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return intArrayOf(0, 0, 0, 0)
+        val winInsets = runCatching { wm.currentWindowMetrics.windowInsets }.getOrNull()
+            ?: return intArrayOf(0, 0, 0, 0)
+        val types = android.view.WindowInsets.Type.systemBars() or
+            android.view.WindowInsets.Type.displayCutout()
+        val ins = winInsets.getInsetsIgnoringVisibility(types)
+        return intArrayOf(ins.left, ins.top, ins.right, ins.bottom)
+    }
+
+    /**
+     * 拿屏幕 4 个圆角中最大的半径（px）。圆角屏的圆角区域物理不可见，球贴边时必须避开。
+     * 老版本 / 无圆角 API 时返回估算值（24dp），覆盖多数主流圆角屏。
+     */
+    private fun maxRoundedCornerRadiusPx(): Int {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            // API 31 之前没 RoundedCorner API，给个保守保底（24dp 足以覆盖 Pixel/小米/三星等典型圆角）
+            return (24 * context.resources.displayMetrics.density).toInt()
+        }
+        val display = view?.display ?: wm.defaultDisplay ?: return 0
+        val positions = intArrayOf(
+            android.view.RoundedCorner.POSITION_TOP_LEFT,
+            android.view.RoundedCorner.POSITION_TOP_RIGHT,
+            android.view.RoundedCorner.POSITION_BOTTOM_LEFT,
+            android.view.RoundedCorner.POSITION_BOTTOM_RIGHT
+        )
+        return positions.maxOf { display.getRoundedCorner(it)?.radius ?: 0 }
     }
 
     fun hide() {
@@ -255,12 +400,13 @@ class FloatingButtonManager(
     private fun leaveDockedEdge() {
         val v = view ?: return
         val params = layoutParams ?: return
-        val (screenW, _) = currentScreenSize()
+        val (screenW, screenH) = currentScreenSize()
         val size = params.width
         val density = context.resources.displayMetrics.density
-        val margin = (16 * density).toInt()
-        // 只在球当前贴边时离开，否则不动 X
-        val atEdge = params.x <= 0 || params.x + size >= screenW || dockSide != DockSide.NONE
+        val romFix = landscapeFixFor(screenW, screenH)
+        val margin = (16 * density).toInt() + romFix
+        // 贴边判定：考虑 romFix 让出的物理隐藏区，球进入 romFix 内也算贴边
+        val atEdge = params.x <= romFix || params.x + size >= screenW - romFix || dockSide != DockSide.NONE
         setDockSide(DockSide.NONE)
         v.animate().cancel()
         v.alpha = 1.0f
@@ -270,7 +416,7 @@ class FloatingButtonManager(
         }
         val centerX = params.x + size / 2
         val targetX = if (centerX < screenW / 2) margin
-        else (screenW - size - margin).coerceAtLeast(0)
+        else (screenW - size - margin).coerceAtLeast(romFix)
 
         snapAnimX?.cancel()
         snapAnimX = SpringAnimation(FloatValueHolder(params.x.toFloat())).apply {
@@ -299,24 +445,41 @@ class FloatingButtonManager(
         val params = layoutParams ?: return
         val density = context.resources.displayMetrics.density
         val (screenW, screenH) = currentScreenSize()
-        val statusBarSafe = (30 * density).toInt()
-        val navBarSafe = (48 * density).toInt()
-        val size = params.width
+        // 系统 bar / 挖孔区域真实占位：横屏 3-button nav 在右侧时 inset 必须从这开始算，
+        // 否则球贴右边落到 nav bar 里看起来"贴着屏幕边缘"忽略了 inset
+        val sysInsets = systemInsetsLtrb()
+        val safeLeft = sysInsets[0]
+        val safeTop = sysInsets[1].coerceAtLeast((30 * density).toInt())
+        val safeRight = sysInsets[2]
+        val safeBottom = sysInsets[3].coerceAtLeast((48 * density).toInt())
+        val containerW = params.width
+        val containerH = params.height
 
-        // Y 方向无论开关都安全 clamp，避免球被状态栏 / 导航栏盖住点不到
+        // Y 用 containerH（不是 width）clamp，避免球落入状态栏 / 导航栏死区
         val targetY = params.y.coerceIn(
-            statusBarSafe,
-            (screenH - size - navBarSafe).coerceAtLeast(statusBarSafe)
+            safeTop,
+            (screenH - containerH - safeBottom).coerceAtLeast(safeTop)
         )
 
         snapAnimX?.cancel(); snapAnimY?.cancel()
 
+        android.util.Log.i("FBM", "snap.in screenW=$screenW screenH=$screenH " +
+            "containerW=$containerW containerH=$containerH " +
+            "safeLTRB=$safeLeft,$safeTop,$safeRight,$safeBottom " +
+            "params(x=${params.x} y=${params.y}) targetY=$targetY dock=$dockSide " +
+            "snapEnabled=$snapToEdgeEnabled inset=$dockEdgeInsetPx")
         if (snapToEdgeEnabled) {
-            // 球完整贴边：X = inset 或 screenW - size - inset，圆球完全在屏内、贴墙立着 + 半透待机
-            val centerX = params.x + size / 2
+            val centerX = params.x + containerW / 2
             val dockLeft = centerX < screenW / 2
             val inset = dockEdgeInsetPx.coerceAtLeast(0)
-            val targetX = if (dockLeft) inset else (screenW - size - inset).coerceAtLeast(0)
+            val romFix = landscapeFixFor(screenW, screenH)
+            val targetX = if (dockLeft) {
+                inset + romFix
+            } else {
+                (screenW - containerW - inset - romFix).coerceAtLeast(0)
+            }
+            android.util.Log.i("FBM", "snap.calc centerX=$centerX dockLeft=$dockLeft " +
+                "romFix=$romFix → targetX=$targetX")
             setDockSide(if (dockLeft) DockSide.LEFT else DockSide.RIGHT)
 
             snapAnimX = SpringAnimation(FloatValueHolder(params.x.toFloat())).apply {
@@ -329,6 +492,8 @@ class FloatingButtonManager(
                     runCatching { wm.updateViewLayout(v, params) }
                 }
                 addEndListener { _, _, _, _ ->
+                    android.util.Log.i("FBM", "snap.end dock=$dockSide " +
+                        "finalParams(x=${params.x} y=${params.y})")
                     persistPositionDebounced()
                     v.animate().alpha(0.75f).setDuration(220L).start()
                 }
@@ -370,13 +535,14 @@ class FloatingButtonManager(
         if (docked) setDockSide(DockSide.NONE)
         if (!docked) return params.x
 
-        val (screenW, _) = currentScreenSize()
+        val (screenW, screenH) = currentScreenSize()
         val size = params.width  // = containerW
         val density = context.resources.displayMetrics.density
-        val margin = (8 * density).toInt()
+        val romFix = landscapeFixFor(screenW, screenH)
+        val margin = (8 * density).toInt() + romFix
         val centerX = params.x + size / 2
         val targetX = if (centerX < screenW / 2) margin
-        else (screenW - size - margin).coerceAtLeast(0)
+        else (screenW - size - margin).coerceAtLeast(romFix)
 
         snapAnimX?.cancel()
         snapAnimX = SpringAnimation(FloatValueHolder(params.x.toFloat())).apply {
@@ -439,13 +605,16 @@ class FloatingButtonManager(
         target.setOnTouchListener { v, ev ->
             when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    // 用户重新按下：取消自动贴边倒计时 + 正在跑的吸边动画 + 若处于藏起来的待机态，把球拉回全显
+                    // 取消自动贴边倒计时 + 上次的吸边动画 + 待机透明度。**不**立即 wake——
+                    // 否则长按弹菜单时球会从贴边位置缩进 8dp，视觉错位。wake 推迟到拖动开始时。
                     cancelAutoDock()
                     snapAnimY?.cancel()
-                    val wokeX = wakeFromSnap()
+                    snapAnimX?.cancel()
+                    v.animate().cancel()
+                    v.alpha = 1.0f
                     downX = ev.rawX
                     downY = ev.rawY
-                    initX = wokeX
+                    initX = params.x  // 当前位置（可能还在 dock 状态）
                     initY = params.y
                     downTime = System.currentTimeMillis()
                     moved = false
@@ -459,6 +628,16 @@ class FloatingButtonManager(
                     if (!moved && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
                         moved = true
                         v.removeCallbacks(longPressRunnable)
+                        // 第一次确认拖动：**同步**解 dock，不启动 spring（spring 异步会跟手指冲突，把球瞬间拉回边）。
+                        // 球的视觉位置可能瞬间从 container 边变到 container 中心（dock NONE 时 visualCx=width/2），
+                        // 但 X 偏移仅 0.3r ≈ 8dp，几乎无感。
+                        snapAnimX?.cancel()
+                        if (dockSide != DockSide.NONE) setDockSide(DockSide.NONE)
+                        v.alpha = 1.0f
+                        initX = params.x  // 用球当前真实位置当拖动起点
+                        downX = ev.rawX
+                        downY = ev.rawY
+                        initY = params.y
                     }
                     if (moved) {
                         params.x = (initX + dx).toInt()
@@ -469,6 +648,9 @@ class FloatingButtonManager(
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     v.removeCallbacks(longPressRunnable)
+                    android.util.Log.i("FBM", "touch.${if (ev.actionMasked == MotionEvent.ACTION_UP) "UP" else "CANCEL"} " +
+                        "moved=$moved longPressFired=$longPressFired " +
+                        "params(x=${params.x} y=${params.y}) dock=$dockSide")
                     // 只要没明显拖动 + 长按 callback 还没烧 → 都算单击
                     if (!moved && !longPressFired) {
                         onSingleTap()
@@ -496,19 +678,36 @@ class FloatingButtonManager(
 
         val density = context.resources.displayMetrics.density
         val (screenW, screenH) = currentScreenSize()
-        val ballSize = params.width
-        val cx = params.x + ballSize / 2
-        val cy = params.y + ballSize / 2
+        val ballRadiusPx = (sizeDp / 2f * density).toInt()
+        // cx 用**球视觉中心**（dock LEFT 球贴 container 左缘、RIGHT 贴右缘），不是 container 中心。
+        // 这样长按时即便球还在 dock 状态、菜单按钮分布也以球为准，不会偏 0.3r。
+        val ballCxInContainer = when (dockSide) {
+            DockSide.LEFT -> ballRadiusPx
+            DockSide.RIGHT -> params.width - ballRadiusPx
+            DockSide.NONE -> params.width / 2
+        }
+        val cx = params.x + ballCxInContainer
+        val cy = params.y + params.height / 2
 
         val itemSize = (sizeDp * 0.85f * density).toInt().coerceAtLeast((40 * density).toInt())
-        val radius = (sizeDp * 1.65f * density).toInt().coerceAtLeast((72 * density).toInt())
+        // radius = "球半径 + 按钮半径 + 28dp 间隙"，保证按钮边距球边永远 ≥ 28dp。
+        val itemRadiusPx = itemSize / 2
+        val gapPx = (28 * density).toInt()
+        val radius = ballRadiusPx + itemRadiusPx + gapPx
         val space = radius + itemSize  // 三个按钮分布所需的最小可用空间
 
         // 选基础朝向：4 角时取对角 45° 反弹（最大可用空间），4 边时取垂直反弹
+        // 横屏 hide 区让出后"可用屏宽" = [romFix, screenW - romFix]，边界判断用让出后的边
+        val romFix = landscapeFixFor(screenW, screenH)
+        val usableLeft = romFix
+        val usableRight = screenW - romFix
         val nearTop = cy - space < 0
         val nearBottom = cy + space > screenH
-        val nearLeft = cx - space < 0
-        val nearRight = cx + space > screenW
+        val nearLeft = cx - space < usableLeft
+        val nearRight = cx + space > usableRight
+        android.util.Log.i("FBM", "arcMenu cx=$cx cy=$cy ball=$ballRadiusPx radius=$radius " +
+            "params(x=${params.x} w=${params.width}) dock=$dockSide screenW=$screenW romFix=$romFix " +
+            "usable=[$usableLeft,$usableRight] near(L=$nearLeft R=$nearRight T=$nearTop B=$nearBottom)")
         val baseAngle: Double = when {
             nearTop && nearLeft -> Math.PI / 4                 // 左上角 → 弹右下
             nearTop && nearRight -> 3 * Math.PI / 4            // 右上角 → 弹左下
@@ -516,7 +715,7 @@ class FloatingButtonManager(
             nearBottom && nearRight -> -3 * Math.PI / 4        // 右下角 → 弹左上
             nearTop -> Math.PI / 2                              // 顶边：向下
             nearBottom -> -Math.PI / 2                          // 底边：向上
-            cx < screenW / 2 -> 0.0                             // 左半：向右
+            cx < (usableLeft + usableRight) / 2 -> 0.0          // 左半：向右
             else -> Math.PI                                     // 右半：向左
         }
         val spread = Math.PI / 4  // ±45°
@@ -557,10 +756,13 @@ class FloatingButtonManager(
             val angle = angles[idx]
             val centerOffsetX = (radius * Math.cos(angle)).toFloat()
             val centerOffsetY = (radius * Math.sin(angle)).toFloat()
-            val left = (cx + centerOffsetX - itemSize / 2f).toInt()
-                .coerceIn(0, (screenW - itemSize).coerceAtLeast(0))
-            val top = (cy + centerOffsetY - itemSize / 2f).toInt()
-                .coerceIn(0, (screenH - itemSize).coerceAtLeast(0))
+            val rawLeft = (cx + centerOffsetX - itemSize / 2f).toInt()
+            val rawTop = (cy + centerOffsetY - itemSize / 2f).toInt()
+            val left = rawLeft.coerceIn(usableLeft, (usableRight - itemSize).coerceAtLeast(usableLeft))
+            val top = rawTop.coerceIn(0, (screenH - itemSize).coerceAtLeast(0))
+            android.util.Log.i("FBM", "arcMenu.btn[$idx] angleDeg=${"%.1f".format(Math.toDegrees(angle))} " +
+                "offset=(${centerOffsetX.toInt()},${centerOffsetY.toInt()}) " +
+                "raw=($rawLeft,$rawTop) → final=($left,$top)")
 
             // 起始 translationX/Y：把按钮视觉起点放在悬浮球中心，动画到目标位置 → "从球里旋出来"的轨迹感
             val btnCenterX = left + itemSize / 2f

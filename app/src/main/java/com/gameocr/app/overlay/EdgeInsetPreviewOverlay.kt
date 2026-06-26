@@ -21,23 +21,29 @@ internal class EdgeInsetPreviewOverlay(private val context: Context) {
     private val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var leftView: View? = null
     private var rightView: View? = null
-    private var currentInsetPx: Int = -1
+    private var lastUserInsetPx: Int = -1
 
-    /** inset ≤ 0 时自动 hide，否则贴 left/right 各一条 [insetPx] 宽度的粉色条。 */
-    fun update(insetPx: Int) {
-        if (insetPx <= 0) { hide(); return }
-        if (insetPx == currentInsetPx && leftView != null) return
-        currentInsetPx = insetPx
+    /**
+     * 显示左右两条粉色条带，宽度 = 球贴边时的**真实距离**（与 FloatingButtonManager.snapToEdge 一致）：
+     * 左条 = userInsetPx + max(cornerR, safeLeft)；右条镜像。
+     * 用户 inset ≤ 0 且不可见区也 0 时整体 hide。
+     */
+    fun update(userInsetPx: Int) {
+        // 预览跟 FloatingButtonManager.snapToEdge 一致：inset 严格 = 球距物理屏边的距离。
+        val px = userInsetPx.coerceAtLeast(0)
+        if (px <= 0) { hide(); return }
+        if (px == lastUserInsetPx && leftView != null) return
+        lastUserInsetPx = px
         if (leftView == null) {
             leftView = makeBar().also {
-                runCatching { wm.addView(it, paramsForSide(insetPx, leftSide = true)) }
+                runCatching { wm.addView(it, paramsForSide(px, leftSide = true)) }
             }
             rightView = makeBar().also {
-                runCatching { wm.addView(it, paramsForSide(insetPx, leftSide = false)) }
+                runCatching { wm.addView(it, paramsForSide(px, leftSide = false)) }
             }
         } else {
-            runCatching { wm.updateViewLayout(leftView, paramsForSide(insetPx, leftSide = true)) }
-            runCatching { wm.updateViewLayout(rightView, paramsForSide(insetPx, leftSide = false)) }
+            runCatching { wm.updateViewLayout(leftView, paramsForSide(px, leftSide = true)) }
+            runCatching { wm.updateViewLayout(rightView, paramsForSide(px, leftSide = false)) }
         }
     }
 
@@ -46,15 +52,40 @@ internal class EdgeInsetPreviewOverlay(private val context: Context) {
         rightView?.let { runCatching { wm.removeView(it) } }
         leftView = null
         rightView = null
-        currentInsetPx = -1
+        lastUserInsetPx = -1
+    }
+
+    /** 跟 FloatingButtonManager.maxRoundedCornerRadiusPx 同算法。 */
+    private fun maxRoundedCornerRadiusPx(): Int {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return (24 * context.resources.displayMetrics.density).toInt()
+        }
+        val display = wm.defaultDisplay ?: return 0
+        val positions = intArrayOf(
+            android.view.RoundedCorner.POSITION_TOP_LEFT,
+            android.view.RoundedCorner.POSITION_TOP_RIGHT,
+            android.view.RoundedCorner.POSITION_BOTTOM_LEFT,
+            android.view.RoundedCorner.POSITION_BOTTOM_RIGHT
+        )
+        return positions.maxOf { display.getRoundedCorner(it)?.radius ?: 0 }
+    }
+
+    /** 跟 FloatingButtonManager.systemInsetsLtrb 取 left/right 部分。 */
+    private fun systemInsetsLeftRight(): Pair<Int, Int> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return 0 to 0
+        val winInsets = runCatching { wm.currentWindowMetrics.windowInsets }.getOrNull()
+            ?: return 0 to 0
+        val types = android.view.WindowInsets.Type.systemBars() or
+            android.view.WindowInsets.Type.displayCutout()
+        val ins = winInsets.getInsetsIgnoringVisibility(types)
+        return ins.left to ins.right
     }
 
     private fun makeBar(): View = View(context).apply {
-        // 半透粉红：~33% alpha 让设置页内容仍透过来可读
         setBackgroundColor(BAR_COLOR)
     }
 
-    private fun paramsForSide(insetPx: Int, leftSide: Boolean): WindowManager.LayoutParams {
+    private fun paramsForSide(widthPx: Int, leftSide: Boolean): WindowManager.LayoutParams {
         val overlayType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
@@ -62,7 +93,7 @@ internal class EdgeInsetPreviewOverlay(private val context: Context) {
             WindowManager.LayoutParams.TYPE_PHONE
         }
         return WindowManager.LayoutParams(
-            insetPx,
+            widthPx,
             WindowManager.LayoutParams.MATCH_PARENT,
             overlayType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
