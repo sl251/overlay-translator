@@ -40,23 +40,38 @@ jobs:
       - name: Generate Gradle wrapper jar
         run: gradle wrapper --gradle-version 8.10.2
 
-      - name: Decode release keystore
+      - name: Prepare release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::error::Secret RELEASE_KEYSTORE_BASE64 is not set. See README → 发版 一节。"
-            exit 1
-          fi
           mkdir -p "$RUNNER_TEMP/keystore"
-          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/keystore/release.jks"
-          echo "RELEASE_KEYSTORE_PATH=$RUNNER_TEMP/keystore/release.jks" >> "$GITHUB_ENV"
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/keystore/release.jks"
+            echo "RELEASE_KEYSTORE_PATH=$RUNNER_TEMP/keystore/release.jks" >> "$GITHUB_ENV"
+            echo "RELEASE_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "RELEASE_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "RELEASE_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+          else
+            echo "::warning::RELEASE_KEYSTORE_BASE64 is not set; generating an ephemeral release keystore. APK is installable, but future upgrades need the same signing key."
+            keytool -genkeypair \
+              -keystore "$RUNNER_TEMP/keystore/release.jks" \
+              -storepass android \
+              -keypass android \
+              -alias screen-translator \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Screen Translator,O=sl251,C=CN"
+            echo "RELEASE_KEYSTORE_PATH=$RUNNER_TEMP/keystore/release.jks" >> "$GITHUB_ENV"
+            echo "RELEASE_KEYSTORE_PASSWORD=android" >> "$GITHUB_ENV"
+            echo "RELEASE_KEY_ALIAS=screen-translator" >> "$GITHUB_ENV"
+            echo "RELEASE_KEY_PASSWORD=android" >> "$GITHUB_ENV"
+          fi
 
       - name: Build release APK
-        env:
-          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: ./gradlew --no-daemon clean assembleRelease
 
       - name: Locate APK
