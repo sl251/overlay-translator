@@ -5,16 +5,21 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
@@ -41,7 +46,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -56,6 +60,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -79,7 +84,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun MainScreen(
     onOpenSettings: () -> Unit,
@@ -215,7 +220,54 @@ fun MainScreen(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 状态卡
+            val shizukuUsable = shizukuAvail == ShizukuCapabilities.Availability.READY ||
+                shizukuAvail == ShizukuCapabilities.Availability.INSTALLED_NOT_GRANTED
+
+            CaptureControlCard(
+                canDrawOverlay = canDrawOverlay,
+                serviceRunning = serviceRunning,
+                startMode = startMode,
+                shizukuAvail = shizukuAvail,
+                shizukuUsable = shizukuUsable,
+                onGrantOverlay = {
+                    val intent = Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:" + context.packageName)
+                    )
+                    context.startActivity(intent)
+                },
+                onStop = { context.startService(CaptureService.stopIntent(context)) },
+                onStart = {
+                    when (startMode) {
+                        StartMode.MEDIA_PROJECTION ->
+                            context.startActivity(MediaProjectionRequestActivity.newIntent(context))
+                        StartMode.SHIZUKU -> scope.launch {
+                            val ok = viewModel.ensureShizukuPermission()
+                            shizukuAvail = viewModel.shizukuAvailability(context)
+                            if (ok) {
+                                val svc = Intent(context, CaptureService::class.java).apply {
+                                    action = CaptureService.ACTION_START
+                                    putExtra(CaptureService.EXTRA_USE_SHIZUKU, true)
+                                }
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                    ContextCompat.startForegroundService(context, svc)
+                                } else {
+                                    context.startService(svc)
+                                }
+                            } else {
+                                snackbarHostState.showSnackbar(
+                                    context.getString(R.string.main_snack_shizuku_denied)
+                                )
+                            }
+                        }
+                    }
+                },
+                onSelectMode = {
+                    startMode = it
+                    userOverrodeMode = true
+                }
+            )
+
             StatusCard(
                 canDrawOverlay = canDrawOverlay,
                 region = region,
@@ -223,132 +275,6 @@ fun MainScreen(
                 batteryOk = batteryOk,
                 serviceRunning = serviceRunning
             )
-
-            // 主操作：截屏服务
-            ActionCard(title = stringResource(R.string.main_section_capture)) {
-                if (!canDrawOverlay) {
-                    Button(
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
-                        onClick = {
-                            val intent = Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:" + context.packageName)
-                            )
-                            context.startActivity(intent)
-                        }
-                    ) { Text(stringResource(R.string.main_action_grant_overlay_first)) }
-                } else {
-                    val shizukuUsable = shizukuAvail == ShizukuCapabilities.Availability.READY ||
-                        shizukuAvail == ShizukuCapabilities.Availability.INSTALLED_NOT_GRANTED
-
-                    // 大主按钮：未运行 → primary 色"启动"；运行中 → error 色"停止"
-                    if (serviceRunning) {
-                        Button(
-                            modifier = Modifier.fillMaxWidth().height(56.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer,
-                                contentColor = MaterialTheme.colorScheme.onErrorContainer
-                            ),
-                            onClick = { context.startService(CaptureService.stopIntent(context)) }
-                        ) {
-                            Icon(Icons.Default.Stop, contentDescription = null)
-                            Text("  ${stringResource(R.string.main_action_stop)}", modifier = Modifier.padding(start = 4.dp))
-                        }
-                    } else {
-                        val modeLabel = if (startMode == StartMode.SHIZUKU) "Shizuku" else "MediaProjection"
-                        Button(
-                            modifier = Modifier.fillMaxWidth().height(56.dp),
-                            onClick = {
-                                when (startMode) {
-                                    StartMode.MEDIA_PROJECTION ->
-                                        context.startActivity(
-                                            MediaProjectionRequestActivity.newIntent(context)
-                                        )
-                                    StartMode.SHIZUKU -> scope.launch {
-                                        val ok = viewModel.ensureShizukuPermission()
-                                        shizukuAvail = viewModel.shizukuAvailability(context)
-                                        if (ok) {
-                                            val svc = Intent(context, CaptureService::class.java).apply {
-                                                action = CaptureService.ACTION_START
-                                                putExtra(CaptureService.EXTRA_USE_SHIZUKU, true)
-                                            }
-                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                                ContextCompat.startForegroundService(context, svc)
-                                            } else {
-                                                context.startService(svc)
-                                            }
-                                        } else {
-                                            snackbarHostState.showSnackbar(
-                                                context.getString(R.string.main_snack_shizuku_denied)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        ) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = null)
-                            Text(
-                                "  ${stringResource(R.string.main_action_start_format, modeLabel)}",
-                                modifier = Modifier.padding(start = 4.dp)
-                            )
-                        }
-                    }
-
-                    // 启动方式 tabs：服务运行中禁止切换；Shizuku 不可用时该项禁用
-                    Text(
-                        stringResource(R.string.main_label_start_mode),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                        SegmentedButton(
-                            selected = startMode == StartMode.MEDIA_PROJECTION,
-                            onClick = {
-                                startMode = StartMode.MEDIA_PROJECTION
-                                userOverrodeMode = true
-                            },
-                            enabled = !serviceRunning,
-                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                            label = { Text("MediaProjection") }
-                        )
-                        SegmentedButton(
-                            selected = startMode == StartMode.SHIZUKU,
-                            onClick = {
-                                startMode = StartMode.SHIZUKU
-                                userOverrodeMode = true
-                            },
-                            enabled = !serviceRunning && shizukuUsable,
-                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                            label = { Text("Shizuku") }
-                        )
-                    }
-                    val hintRes = when {
-                        startMode == StartMode.MEDIA_PROJECTION -> R.string.main_hint_media_projection
-                        shizukuAvail == ShizukuCapabilities.Availability.READY -> R.string.main_hint_shizuku_ready
-                        shizukuAvail == ShizukuCapabilities.Availability.INSTALLED_NOT_GRANTED -> R.string.main_hint_shizuku_not_granted
-                        shizukuAvail == ShizukuCapabilities.Availability.NOT_RUNNING -> R.string.main_hint_shizuku_not_running
-                        else -> R.string.main_hint_shizuku_not_installed
-                    }
-                    Text(
-                        stringResource(hintRes),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    // 悬浮圆球的交互说明：用户经常找不到"循环模式"在哪里开关，集中在这里说一下
-                    Text(
-                        stringResource(R.string.main_label_usage),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                    Text(
-                        stringResource(R.string.main_usage_text),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
 
             // 区域
             ActionCard(title = stringResource(R.string.main_section_region)) {
@@ -404,6 +330,145 @@ fun MainScreen(
 }
 
 private const val GITHUB_URL = "https://github.com/ciddwd/overlay-translator"
+
+@Composable
+private fun CaptureControlCard(
+    canDrawOverlay: Boolean,
+    serviceRunning: Boolean,
+    startMode: StartMode,
+    shizukuAvail: ShizukuCapabilities.Availability,
+    shizukuUsable: Boolean,
+    onGrantOverlay: () -> Unit,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    onSelectMode: (StartMode) -> Unit
+) {
+    val hintRes = when {
+        startMode == StartMode.MEDIA_PROJECTION -> R.string.main_hint_media_projection
+        shizukuAvail == ShizukuCapabilities.Availability.READY -> R.string.main_hint_shizuku_ready
+        shizukuAvail == ShizukuCapabilities.Availability.INSTALLED_NOT_GRANTED -> R.string.main_hint_shizuku_not_granted
+        shizukuAvail == ShizukuCapabilities.Availability.NOT_RUNNING -> R.string.main_hint_shizuku_not_running
+        else -> R.string.main_hint_shizuku_not_installed
+    }
+    val titleRes = if (serviceRunning) R.string.main_hero_running_title else R.string.main_hero_ready_title
+    val subtitleRes = if (serviceRunning) R.string.main_hero_running_subtitle else R.string.main_hero_ready_subtitle
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            StatusBadge(
+                label = stringResource(
+                    if (serviceRunning) R.string.main_status_running else R.string.main_status_idle
+                ),
+                active = serviceRunning
+            )
+            Text(
+                stringResource(titleRes),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                stringResource(subtitleRes),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
+            )
+
+            if (serviceRunning) {
+                Button(
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                    ),
+                    onClick = onStop
+                ) {
+                    Icon(Icons.Default.Stop, contentDescription = null)
+                    Text(stringResource(R.string.main_action_stop), modifier = Modifier.padding(start = 8.dp))
+                }
+            } else if (!canDrawOverlay) {
+                Button(
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    onClick = onGrantOverlay
+                ) {
+                    Text(stringResource(R.string.main_action_grant_overlay_first))
+                }
+            } else {
+                Button(
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    onClick = onStart
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null)
+                    Text(stringResource(R.string.main_action_start_overlay), modifier = Modifier.padding(start = 8.dp))
+                }
+            }
+
+            if (canDrawOverlay) {
+                Text(
+                    stringResource(R.string.main_label_start_mode),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
+                )
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    SegmentedButton(
+                        selected = startMode == StartMode.MEDIA_PROJECTION,
+                        onClick = { onSelectMode(StartMode.MEDIA_PROJECTION) },
+                        enabled = !serviceRunning,
+                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                        label = { Text(stringResource(R.string.main_mode_standard)) }
+                    )
+                    SegmentedButton(
+                        selected = startMode == StartMode.SHIZUKU,
+                        onClick = { onSelectMode(StartMode.SHIZUKU) },
+                        enabled = !serviceRunning && shizukuUsable,
+                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                        label = { Text(stringResource(R.string.main_mode_quiet)) }
+                    )
+                }
+                Text(
+                    stringResource(hintRes),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusBadge(label: String, active: Boolean) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(
+                if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                else MaterialTheme.colorScheme.surface.copy(alpha = 0.56f)
+            )
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+            modifier = Modifier.size(7.dp)
+        ) {}
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(start = 8.dp)
+        )
+    }
+}
 
 @Composable
 private fun AboutContent() {
@@ -538,6 +603,7 @@ private fun UpdateResultDialog(
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun StatusCard(
     canDrawOverlay: Boolean,
     region: CaptureRegion?,
@@ -556,67 +622,72 @@ private fun StatusCard(
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
                 stringResource(R.string.main_status_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
-            StatusRow(
-                stringResource(R.string.main_status_capture_service),
-                ok = serviceRunning,
-                detail = stringResource(if (serviceRunning) R.string.main_status_running else R.string.main_status_idle)
-            )
-            StatusRow(stringResource(R.string.main_status_overlay_perm), canDrawOverlay)
-            StatusRow(
-                stringResource(R.string.main_status_region),
-                ok = true,
-                detail = region?.let {
-                    stringResource(R.string.main_status_region_format, it.width, it.height, it.left, it.top)
-                } ?: stringResource(R.string.main_status_region_full)
-            )
-            StatusRow(
-                stringResource(R.string.main_status_shizuku),
-                ok = shizukuAvail == ShizukuCapabilities.Availability.READY,
-                detail = stringResource(
-                    when (shizukuAvail) {
-                        ShizukuCapabilities.Availability.READY -> R.string.main_status_shizuku_ready
-                        ShizukuCapabilities.Availability.INSTALLED_NOT_GRANTED -> R.string.main_status_shizuku_not_granted
-                        ShizukuCapabilities.Availability.NOT_RUNNING -> R.string.main_status_shizuku_not_running
-                        ShizukuCapabilities.Availability.NOT_INSTALLED -> R.string.main_status_shizuku_not_installed
-                    }
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatusChip(
+                    stringResource(R.string.main_status_capture_service),
+                    ok = serviceRunning,
+                    detail = stringResource(if (serviceRunning) R.string.main_status_running else R.string.main_status_idle)
                 )
-            )
-            StatusRow(stringResource(R.string.main_status_battery_whitelist), batteryOk)
+                StatusChip(stringResource(R.string.main_status_overlay_perm), canDrawOverlay)
+                StatusChip(
+                    stringResource(R.string.main_status_region),
+                    ok = true,
+                    detail = region?.let {
+                        stringResource(R.string.main_status_region_format, it.width, it.height, it.left, it.top)
+                    } ?: stringResource(R.string.main_status_region_full)
+                )
+                StatusChip(
+                    stringResource(R.string.main_status_shizuku),
+                    ok = shizukuAvail == ShizukuCapabilities.Availability.READY,
+                    detail = stringResource(
+                        when (shizukuAvail) {
+                            ShizukuCapabilities.Availability.READY -> R.string.main_status_shizuku_ready
+                            ShizukuCapabilities.Availability.INSTALLED_NOT_GRANTED -> R.string.main_status_shizuku_not_granted
+                            ShizukuCapabilities.Availability.NOT_RUNNING -> R.string.main_status_shizuku_not_running
+                            ShizukuCapabilities.Availability.NOT_INSTALLED -> R.string.main_status_shizuku_not_installed
+                        }
+                    )
+                )
+                StatusChip(stringResource(R.string.main_status_battery_whitelist), batteryOk)
+            }
         }
     }
 }
 
 @Composable
-private fun StatusRow(label: String, ok: Boolean, detail: String? = null) {
+private fun StatusChip(label: String, ok: Boolean, detail: String? = null) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f))
+            .padding(horizontal = 12.dp, vertical = 10.dp)
     ) {
         Surface(
             shape = CircleShape,
             color = if (ok) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.outline,
+            else MaterialTheme.colorScheme.error,
             modifier = Modifier.size(8.dp)
         ) {}
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier
-                .padding(start = 12.dp)
-                .weight(1f)
-        )
-        Text(
-            text = detail ?: stringResource(if (ok) R.string.main_status_enabled else R.string.main_status_disabled),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Column(modifier = Modifier.padding(start = 10.dp)) {
+            Text(text = label, style = MaterialTheme.typography.labelMedium)
+            Text(
+                text = detail ?: stringResource(if (ok) R.string.main_status_enabled else R.string.main_status_disabled),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 

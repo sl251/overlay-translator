@@ -33,6 +33,13 @@
     <string name="main_action_grant_overlay_first">先授权悬浮窗</string>
     <string name="main_action_stop">停止截屏服务</string>
     <string name="main_action_start_format">启动截屏服务（%1$s）</string>
+    <string name="main_action_start_overlay">打开悬浮翻译</string>
+    <string name="main_hero_ready_title">随时翻译屏幕文字</string>
+    <string name="main_hero_ready_subtitle">启动后回到游戏、漫画或视觉小说，需要翻译时点一下悬浮球就行。</string>
+    <string name="main_hero_running_title">悬浮翻译已在运行</string>
+    <string name="main_hero_running_subtitle">保持服务运行可以少重复授权；单次翻译、循环翻译都交给悬浮球。</string>
+    <string name="main_mode_standard">标准模式</string>
+    <string name="main_mode_quiet">免弹窗模式</string>
     <string name="main_section_capture">截屏服务</string>
     <string name="main_section_region">截屏区域</string>
     <string name="main_section_rom_guide">系统兼容引导</string>

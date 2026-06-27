@@ -33,6 +33,13 @@
     <string name="main_action_grant_overlay_first">Grant overlay first</string>
     <string name="main_action_stop">Stop capture service</string>
     <string name="main_action_start_format">Start capture (%1$s)</string>
+    <string name="main_action_start_overlay">Turn on floating translation</string>
+    <string name="main_hero_ready_title">Translate from anywhere</string>
+    <string name="main_hero_ready_subtitle">Start once, switch back to your game or comic, then tap the floating ball whenever text needs a hand.</string>
+    <string name="main_hero_running_title">Floating translator is live</string>
+    <string name="main_hero_running_subtitle">Leave this service running to avoid setting things up again. The floating ball handles one-shot and loop translation.</string>
+    <string name="main_mode_standard">Standard</string>
+    <string name="main_mode_quiet">No-dialog</string>
     <string name="main_section_capture">Capture service</string>
     <string name="main_section_region">Capture region</string>
     <string name="main_section_rom_guide">System compatibility</string>
