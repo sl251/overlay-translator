@@ -7,7 +7,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-// Apple-inspired neutral palette: quiet whites, graphite text, one restrained system-blue accent.
+// Ultra-minimal neutral palette: no chroma, only black / white / gray.
 val AppleWhite = Color(0xFFFFFFFF)
 val AppleMist = Color(0xFFF7F8FA)
 val AppleCloud = Color(0xFFEFF2F6)
@@ -15,8 +15,8 @@ val AppleLine = Color(0xFFDCE2EA)
 val AppleSecondary = Color(0xFF6E7783)
 val AppleGraphite = Color(0xFF1D1D1F)
 val AppleInk = Color(0xFF0B0F17)
-val AppleBlue = Color(0xFF007AFF)
-val AppleBlueSoft = Color(0xFFE7F1FF)
+val AppleBlue = Color(0xFF111111)
+val AppleBlueSoft = Color(0xFFEDEDED)
 val AppleDarkBg = Color(0xFF090B10)
 val AppleDarkPanel = Color(0xFF151820)
 val AppleDarkPanelHigh = Color(0xFF20242E)
@@ -58,23 +58,23 @@ private val AppleLight = lightColorScheme(
 
     inverseSurface = AppleInk,
     inverseOnSurface = AppleWhite,
-    inversePrimary = Color(0xFF8CC8FF),
+    inversePrimary = Color(0xFFE5E5E5),
 
     outline = AppleLine,
     outlineVariant = Color(0xBFFFFFFF),
     scrim = Color(0x66000000),
 
-    error = Color(0xFFFF3B30),
+    error = Color(0xFF111111),
     onError = AppleWhite,
-    errorContainer = Color(0xFFFFE9E7),
-    onErrorContainer = Color(0xFF7A1711),
+    errorContainer = Color(0xFFE5E5E5),
+    onErrorContainer = Color(0xFF111111),
 )
 
 private val AppleDark = darkColorScheme(
-    primary = Color(0xFF0A84FF),
-    onPrimary = AppleWhite,
-    primaryContainer = Color(0xFF103B66),
-    onPrimaryContainer = Color(0xFFE8F3FF),
+    primary = AppleWhite,
+    onPrimary = AppleInk,
+    primaryContainer = Color(0xFF1C1C1E),
+    onPrimaryContainer = AppleWhite,
 
     secondary = Color(0xFFE8EAEE),
     onSecondary = AppleInk,
@@ -93,7 +93,7 @@ private val AppleDark = darkColorScheme(
     surfaceVariant = AppleDarkPanelHigh,
     onSurfaceVariant = Color(0xFFB4BBC6),
 
-    surfaceTint = Color(0xFF0A84FF),
+    surfaceTint = Color(0xFF8A8A8E),
     surfaceBright = AppleDarkPanelHigh,
     surfaceDim = AppleDarkBg,
     surfaceContainer = AppleDarkPanel,
@@ -104,16 +104,16 @@ private val AppleDark = darkColorScheme(
 
     inverseSurface = Color(0xFFF5F7FA),
     inverseOnSurface = AppleInk,
-    inversePrimary = AppleBlue,
+    inversePrimary = Color(0xFF111111),
 
     outline = Color(0xFF343A46),
     outlineVariant = Color(0x22FFFFFF),
     scrim = Color(0x99000000),
 
-    error = Color(0xFFFF453A),
+    error = Color(0xFFE5E5E5),
     onError = AppleInk,
-    errorContainer = Color(0xFF5A1712),
-    onErrorContainer = Color(0xFFFFDAD6),
+    errorContainer = Color(0xFF2A2A2A),
+    onErrorContainer = Color(0xFFE5E5E5),
 )
 
 /** 主题模式：值与 [com.gameocr.app.data.ThemeModePrefs] 中的常量对应。 */

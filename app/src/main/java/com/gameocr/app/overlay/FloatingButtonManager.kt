@@ -163,7 +163,7 @@ class FloatingButtonManager(
             )
             strokeColor = 0xBFFFFFFF.toInt()
             strokeWidthPx = 1.2f * density
-            shadowColor = 0x660A84FF.toInt()
+            shadowColor = 0x66000000.toInt()
             shadowRadiusPx = 10f * density
             shadowOffsetYPx = 6f * density
             ballRadius = size / 2f

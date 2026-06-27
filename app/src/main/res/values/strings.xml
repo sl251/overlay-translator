@@ -62,6 +62,7 @@
     <string name="main_hint_shizuku_not_installed">Shizuku not installed</string>
     <string name="main_snack_shizuku_denied">Shizuku permission denied; grant it in the Shizuku app and retry</string>
     <string name="main_status_title">Current status</string>
+    <string name="main_advanced_status_title">Advanced settings and status</string>
     <string name="main_status_capture_service">Capture service</string>
     <string name="main_status_running">Running</string>
     <string name="main_status_idle">Not running</string>
@@ -83,6 +84,13 @@
     <string name="settings_base_url">Base URL</string>
     <string name="settings_api_key">API Key</string>
     <string name="settings_model">Model name</string>
+    <string name="settings_provider_preset">Provider preset</string>
+    <string name="settings_provider_custom">Custom endpoint</string>
+    <string name="settings_provider_model_preset">Model preset</string>
+    <string name="settings_model_primary">Primary model</string>
+    <string name="settings_model_fallback">Fallback model</string>
+    <string name="settings_model_fallback_placeholder">Optional · used when primary model fails</string>
+    <string name="settings_model_fallback_hint">When this is set, translation retries with the fallback model after the primary model fails. Streaming is disabled for that retry path to keep output clean.</string>
     <string name="settings_source_lang">Source language</string>
     <string name="settings_target_lang">Target language</string>
     <string name="settings_prompt">Prompt template</string>

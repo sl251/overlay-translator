@@ -30,6 +30,7 @@ class SettingsRepository @Inject constructor(
         val BaseUrl = stringPreferencesKey("base_url")
         val ApiKey = stringPreferencesKey("api_key")
         val Model = stringPreferencesKey("model")
+        val FallbackModel = stringPreferencesKey("fallback_model")
         val SourceLang = stringPreferencesKey("source_lang")
         val TargetLang = stringPreferencesKey("target_lang")
         val Prompt = stringPreferencesKey("prompt")
@@ -102,6 +103,7 @@ class SettingsRepository @Inject constructor(
             prefs[Keys.BaseUrl] = next.baseUrl
             prefs[Keys.ApiKey] = next.apiKey
             prefs[Keys.Model] = next.model
+            prefs[Keys.FallbackModel] = next.fallbackModel
             prefs[Keys.SourceLang] = next.sourceLang
             prefs[Keys.TargetLang] = next.targetLang
             prefs[Keys.Prompt] = next.promptTemplate
@@ -166,6 +168,7 @@ class SettingsRepository @Inject constructor(
             baseUrl = this[Keys.BaseUrl] ?: default.baseUrl,
             apiKey = this[Keys.ApiKey] ?: default.apiKey,
             model = this[Keys.Model] ?: default.model,
+            fallbackModel = this[Keys.FallbackModel] ?: default.fallbackModel,
             // 兼容 0.1.x 旧用户：那时 sourceLang 用 enum.name（"AUTO"/"JA"/...）保存。
             // 新版改为 BCP-47 tag（"auto"/"ja"/...）。读出时若是旧大写值，按 mapping 转回。
             sourceLang = (this[Keys.SourceLang] ?: default.sourceLang).let { raw ->

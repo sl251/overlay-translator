@@ -11,6 +11,7 @@ data class Settings(
     val baseUrl: String = "https://api.deepseek.com/v1/",
     val apiKey: String = "",
     val model: String = "deepseek-v4-flash",
+    val fallbackModel: String = "",
     /** BCP-47 源语言代码（如 "auto"/"ja"/"zh-CN"）。从全部 [Languages.ALL] 中选取。 */
     val sourceLang: String = Languages.AUTO.code,
     val targetLang: String = "zh-CN",
@@ -159,6 +160,51 @@ data class Settings(
  * OCR 合并相邻 box 的强度档位。从保守到激进——保守宁可让 OCR 输出散一些不误合，
  * 激进容忍更大间距 / 行高差，适合漫画气泡内多行被切碎的情形。
  */
+data class OpenAiProviderPreset(
+    val label: String,
+    val baseUrl: String,
+    val models: List<String>
+)
+
+object OpenAiProviderPresets {
+    val ALL: List<OpenAiProviderPreset> = listOf(
+        OpenAiProviderPreset(
+            label = "DeepSeek Official",
+            baseUrl = "https://api.deepseek.com/v1/",
+            models = listOf("deepseek-chat", "deepseek-reasoner", "deepseek-v4-flash")
+        ),
+        OpenAiProviderPreset(
+            label = "SiliconFlow",
+            baseUrl = "https://api.siliconflow.cn/v1/",
+            models = listOf(
+                "deepseek-ai/DeepSeek-V3",
+                "deepseek-ai/DeepSeek-R1",
+                "Qwen/Qwen2.5-72B-Instruct"
+            )
+        ),
+        OpenAiProviderPreset(
+            label = "OpenAI",
+            baseUrl = "https://api.openai.com/v1/",
+            models = listOf("gpt-4o-mini", "gpt-4.1-mini", "gpt-4.1")
+        ),
+        OpenAiProviderPreset(
+            label = "Zhipu GLM",
+            baseUrl = "https://open.bigmodel.cn/api/paas/v4/",
+            models = listOf("glm-4-flash", "glm-4-air", "glm-4-plus")
+        ),
+        OpenAiProviderPreset(
+            label = "Moonshot Kimi",
+            baseUrl = "https://api.moonshot.cn/v1/",
+            models = listOf("moonshot-v1-8k", "moonshot-v1-32k", "kimi-k2-0711-preview")
+        ),
+        OpenAiProviderPreset(
+            label = "Local Ollama",
+            baseUrl = "http://127.0.0.1:11434/v1/",
+            models = listOf("qwen2.5:7b", "llama3.1:8b", "gemma2:9b")
+        )
+    )
+}
+
 @Serializable
 enum class MergeStrength {
     /** 漫画 / 字幕短句：宽松阈值（gap 1.8x、垂直 1.3x、相交 15%），最容易合，可能误合相邻气泡。 */

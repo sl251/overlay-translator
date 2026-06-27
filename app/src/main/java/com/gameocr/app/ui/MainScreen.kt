@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -35,7 +36,9 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -108,6 +111,7 @@ fun MainScreen(
     var startMode by remember { mutableStateOf(StartMode.MEDIA_PROJECTION) }
     var userOverrodeMode by remember { mutableStateOf(false) }
     var showClearRegionDialog by remember { mutableStateOf(false) }
+    var advancedExpanded by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     // 主屏一进就触发自动检查更新。autoCheckIfDue 内部 24h 节流，频繁进出主屏不会浪费 API
@@ -205,11 +209,17 @@ fun MainScreen(
                     )
                 },
                 actions = {
-                    TextButton(onClick = onOpenLogs) {
+                    TextButton(
+                        onClick = onOpenLogs,
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.List, contentDescription = null)
                         Text(" ${stringResource(R.string.main_logs)}", modifier = Modifier.padding(start = 4.dp))
                     }
-                    TextButton(onClick = onOpenSettings) {
+                    TextButton(
+                        onClick = onOpenSettings,
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
+                    ) {
                         Icon(Icons.Default.Settings, contentDescription = null)
                         Text(" ${stringResource(R.string.main_settings)}", modifier = Modifier.padding(start = 4.dp))
                     }
@@ -232,6 +242,120 @@ fun MainScreen(
         ) {
             val shizukuUsable = shizukuAvail == ShizukuCapabilities.Availability.READY ||
                 shizukuAvail == ShizukuCapabilities.Availability.INSTALLED_NOT_GRANTED
+            val grantOverlay: () -> Unit = {
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + context.packageName)
+                )
+                context.startActivity(intent)
+            }
+            val startCapture: () -> Unit = {
+                when (startMode) {
+                    StartMode.MEDIA_PROJECTION ->
+                        context.startActivity(MediaProjectionRequestActivity.newIntent(context))
+                    StartMode.SHIZUKU -> scope.launch {
+                        val ok = viewModel.ensureShizukuPermission()
+                        shizukuAvail = viewModel.shizukuAvailability(context)
+                        if (ok) {
+                            val svc = Intent(context, CaptureService::class.java).apply {
+                                action = CaptureService.ACTION_START
+                                putExtra(CaptureService.EXTRA_USE_SHIZUKU, true)
+                            }
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                ContextCompat.startForegroundService(context, svc)
+                            } else {
+                                context.startService(svc)
+                            }
+                        } else {
+                            snackbarHostState.showSnackbar(
+                                context.getString(R.string.main_snack_shizuku_denied)
+                            )
+                        }
+                    }
+                }
+            }
+
+            MinimalHero(
+                canDrawOverlay = canDrawOverlay,
+                serviceRunning = serviceRunning,
+                onGrantOverlay = grantOverlay,
+                onStart = startCapture,
+                onStop = { context.startService(CaptureService.stopIntent(context)) },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            MinimalAccordion(
+                title = stringResource(R.string.main_advanced_status_title),
+                expanded = advancedExpanded,
+                onToggle = { advancedExpanded = !advancedExpanded }
+            ) {
+                MinimalSection(title = stringResource(R.string.main_label_start_mode)) {
+                    MinimalModeToggle(
+                        selected = startMode,
+                        shizukuEnabled = shizukuUsable,
+                        serviceRunning = serviceRunning,
+                        onSelect = {
+                            startMode = it
+                            userOverrodeMode = true
+                        }
+                    )
+                    MinimalMetaText(
+                        text = stringResource(
+                            when {
+                                startMode == StartMode.MEDIA_PROJECTION -> R.string.main_hint_media_projection
+                                shizukuAvail == ShizukuCapabilities.Availability.READY -> R.string.main_hint_shizuku_ready
+                                shizukuAvail == ShizukuCapabilities.Availability.INSTALLED_NOT_GRANTED -> R.string.main_hint_shizuku_not_granted
+                                shizukuAvail == ShizukuCapabilities.Availability.NOT_RUNNING -> R.string.main_hint_shizuku_not_running
+                                else -> R.string.main_hint_shizuku_not_installed
+                            }
+                        )
+                    )
+                }
+                MinimalSection(title = stringResource(R.string.main_section_region)) {
+                    MinimalOutlineButton(
+                        text = stringResource(R.string.main_btn_pick_region),
+                        onClick = { context.startActivity(RegionPickerActivity.newIntent(context)) }
+                    )
+                    if (region != null) {
+                        MinimalOutlineButton(
+                            text = stringResource(R.string.main_btn_clear_region),
+                            onClick = { showClearRegionDialog = true }
+                        )
+                    }
+                }
+                MinimalSection(title = stringResource(R.string.main_status_title)) {
+                    MinimalStatusRows(
+                        canDrawOverlay = canDrawOverlay,
+                        region = region,
+                        shizukuAvail = shizukuAvail,
+                        batteryOk = batteryOk,
+                        serviceRunning = serviceRunning
+                    )
+                }
+                MinimalSection(title = stringResource(R.string.main_section_rom_guide)) {
+                    MinimalOutlineButton(
+                        text = stringResource(R.string.main_btn_open_autostart),
+                        onClick = {
+                            RomHelper.launchFirstAvailable(context, RomHelper.autoStartIntents(context))
+                        }
+                    )
+                    MinimalOutlineButton(
+                        text = stringResource(
+                            if (batteryOk) R.string.main_btn_battery_already_ok
+                            else R.string.main_btn_open_battery_whitelist
+                        ),
+                        enabled = !batteryOk,
+                        onClick = {
+                            RomHelper.launchFirstAvailable(context, RomHelper.batteryWhitelistIntents(context))
+                        }
+                    )
+                }
+                MinimalSection(title = stringResource(R.string.settings_section_about)) {
+                    AboutContent()
+                }
+            }
+            Box(Modifier.size(48.dp))
+            return@Column
 
             CaptureControlCard(
                 canDrawOverlay = canDrawOverlay,
@@ -344,6 +468,291 @@ fun MainScreen(
 }
 
 private const val GITHUB_URL = "https://github.com/ciddwd/overlay-translator"
+private val MinimalPillShape = RoundedCornerShape(999.dp)
+private val MinimalLineColor: Color
+    @Composable get() = MaterialTheme.colorScheme.outline.copy(alpha = if (isDarkThemeSurface()) 0.46f else 0.36f)
+
+@Composable
+private fun MinimalHero(
+    canDrawOverlay: Boolean,
+    serviceRunning: Boolean,
+    onGrantOverlay: () -> Unit,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.padding(top = 28.dp, bottom = 36.dp),
+        verticalArrangement = Arrangement.spacedBy(28.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            MinimalMetaText(
+                text = stringResource(if (serviceRunning) R.string.main_status_running else R.string.main_status_idle)
+            )
+            Text(
+                text = stringResource(
+                    if (serviceRunning) R.string.main_hero_running_title
+                    else R.string.main_hero_ready_title
+                ),
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Black,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                text = stringResource(
+                    if (serviceRunning) R.string.main_hero_running_subtitle
+                    else R.string.main_hero_ready_subtitle
+                ),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        MinimalOutlineButton(
+            text = stringResource(
+                when {
+                    serviceRunning -> R.string.main_action_stop
+                    !canDrawOverlay -> R.string.main_action_grant_overlay_first
+                    else -> R.string.main_action_start_overlay
+                }
+            ),
+            emphasized = true,
+            onClick = when {
+                serviceRunning -> onStop
+                !canDrawOverlay -> onGrantOverlay
+                else -> onStart
+            }
+        )
+    }
+}
+
+@Composable
+private fun MinimalAccordion(
+    title: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        HorizontalDivider(color = MinimalLineColor)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggle)
+                .padding(vertical = 18.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                text = if (expanded) "-" else "+",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        AnimatedVisibility(visible = expanded) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(22.dp),
+                content = content
+            )
+        }
+        HorizontalDivider(color = MinimalLineColor)
+    }
+}
+
+@Composable
+private fun MinimalSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        content()
+    }
+}
+
+@Composable
+private fun MinimalOutlineButton(
+    text: String,
+    enabled: Boolean = true,
+    emphasized: Boolean = false,
+    onClick: () -> Unit
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.985f else 1f,
+        animationSpec = tween(220),
+        label = "minimal-button-scale"
+    )
+    val foreground = MaterialTheme.colorScheme.onBackground
+    val line = if (emphasized) foreground else MinimalLineColor
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(if (emphasized) 58.dp else 48.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                alpha = if (enabled) 1f else 0.38f
+            }
+            .clip(MinimalPillShape)
+            .border(1.dp, line, MinimalPillShape)
+            .clickable(
+                enabled = enabled,
+                interactionSource = interaction,
+                indication = null,
+                onClick = onClick
+            )
+            .padding(horizontal = 20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Text(
+            text = text,
+            style = if (emphasized) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = foreground
+        )
+    }
+}
+
+@Composable
+private fun MinimalModeToggle(
+    selected: StartMode,
+    shizukuEnabled: Boolean,
+    serviceRunning: Boolean,
+    onSelect: (StartMode) -> Unit
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+        MinimalToggleItem(
+            label = stringResource(R.string.main_mode_standard),
+            selected = selected == StartMode.MEDIA_PROJECTION,
+            enabled = !serviceRunning,
+            modifier = Modifier.weight(1f)
+        ) { onSelect(StartMode.MEDIA_PROJECTION) }
+        MinimalToggleItem(
+            label = stringResource(R.string.main_mode_quiet),
+            selected = selected == StartMode.SHIZUKU,
+            enabled = !serviceRunning && shizukuEnabled,
+            modifier = Modifier.weight(1f)
+        ) { onSelect(StartMode.SHIZUKU) }
+    }
+}
+
+@Composable
+private fun MinimalToggleItem(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.98f else 1f, tween(220), label = "minimal-toggle-scale")
+    val foreground = if (selected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant
+    val line = if (selected) MaterialTheme.colorScheme.onBackground else MinimalLineColor
+    Box(
+        modifier = modifier
+            .height(46.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                alpha = if (enabled) 1f else 0.34f
+            }
+            .clip(MinimalPillShape)
+            .border(1.dp, line, MinimalPillShape)
+            .clickable(
+                enabled = enabled,
+                interactionSource = interaction,
+                indication = null,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, color = foreground, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun MinimalStatusRows(
+    canDrawOverlay: Boolean,
+    region: CaptureRegion?,
+    shizukuAvail: ShizukuCapabilities.Availability,
+    batteryOk: Boolean,
+    serviceRunning: Boolean
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+        MinimalStatusRow(
+            stringResource(R.string.main_status_capture_service),
+            stringResource(if (serviceRunning) R.string.main_status_running else R.string.main_status_idle)
+        )
+        MinimalStatusRow(
+            stringResource(R.string.main_status_overlay_perm),
+            stringResource(if (canDrawOverlay) R.string.main_status_enabled else R.string.main_status_disabled)
+        )
+        MinimalStatusRow(
+            stringResource(R.string.main_status_region),
+            region?.let {
+                stringResource(R.string.main_status_region_format, it.width, it.height, it.left, it.top)
+            } ?: stringResource(R.string.main_status_region_full)
+        )
+        MinimalStatusRow(
+            stringResource(R.string.main_status_shizuku),
+            stringResource(
+                when (shizukuAvail) {
+                    ShizukuCapabilities.Availability.READY -> R.string.main_status_shizuku_ready
+                    ShizukuCapabilities.Availability.INSTALLED_NOT_GRANTED -> R.string.main_status_shizuku_not_granted
+                    ShizukuCapabilities.Availability.NOT_RUNNING -> R.string.main_status_shizuku_not_running
+                    ShizukuCapabilities.Availability.NOT_INSTALLED -> R.string.main_status_shizuku_not_installed
+                }
+            )
+        )
+        MinimalStatusRow(
+            stringResource(R.string.main_status_battery_whitelist),
+            stringResource(if (batteryOk) R.string.main_status_enabled else R.string.main_status_disabled)
+        )
+    }
+}
+
+@Composable
+private fun MinimalStatusRow(label: String, value: String) {
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(value, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.SemiBold)
+        }
+        HorizontalDivider(color = MinimalLineColor)
+    }
+}
+
+@Composable
+private fun MinimalMetaText(text: String) {
+    Text(
+        text = text.uppercase(),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontWeight = FontWeight.SemiBold
+    )
+}
+
 private val AppleCardShape = RoundedCornerShape(24.dp)
 private val ApplePanelShape = RoundedCornerShape(28.dp)
 private val ApplePillShape = RoundedCornerShape(999.dp)
@@ -695,7 +1104,7 @@ private fun AboutContent() {
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.primary
     )
-    AppleActionButton(
+    MinimalOutlineButton(
         text = stringResource(R.string.settings_about_open_github),
         onClick = {
             runCatching {
@@ -703,22 +1112,18 @@ private fun AboutContent() {
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 context.startActivity(intent)
             }
-        },
-        modifier = Modifier.fillMaxWidth(),
-        tone = ButtonTone.Secondary
+        }
     )
 
     // 检查更新：调 GitHub Releases API，失败让用户手动打开 Release 页（国内访问 api.github.com 偶尔抽风）
-    AppleActionButton(
+    MinimalOutlineButton(
         text = stringResource(
             if (updateState is com.gameocr.app.update.UpdateViewModel.State.Checking)
                 R.string.update_btn_checking
             else R.string.update_btn_check
         ),
         enabled = updateState !is com.gameocr.app.update.UpdateViewModel.State.Checking,
-        onClick = { updateVm.check() },
-        modifier = Modifier.fillMaxWidth(),
-        tone = ButtonTone.Secondary
+        onClick = { updateVm.check() }
     )
 
     // 注意：UpdateResultDialog 已提到 MainScreen 顶层（避免自动检测弹窗被关于卡折叠遮住），

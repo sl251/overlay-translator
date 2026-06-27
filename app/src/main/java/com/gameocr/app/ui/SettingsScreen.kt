@@ -99,6 +99,7 @@ import com.gameocr.app.R
 import com.gameocr.app.data.OcrEngineKind
 import com.gameocr.app.data.OverlayPlacement
 import com.gameocr.app.data.OverlayTheme
+import com.gameocr.app.data.OpenAiProviderPresets
 import com.gameocr.app.data.PreprocessOptions
 import com.gameocr.app.data.RenderMode
 import com.gameocr.app.data.Settings
@@ -120,6 +121,9 @@ fun SettingsScreen(
     var baseUrl by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf("") }
     var model by remember { mutableStateOf("") }
+    var fallbackModel by remember { mutableStateOf("") }
+    var providerPickerExpanded by remember { mutableStateOf(false) }
+    var presetModelPickerExpanded by remember { mutableStateOf(false) }
     var prompt by remember { mutableStateOf("") }
     var targetLang by remember { mutableStateOf("zh-CN") }
     var sourceLang by remember { mutableStateOf("auto") }
@@ -225,6 +229,7 @@ fun SettingsScreen(
         baseUrl = baseUrl,
         apiKey = apiKey,
         model = model,
+        fallbackModel = fallbackModel,
         sourceLang = sourceLang,
         targetLang = targetLang,
         promptTemplate = prompt,
@@ -283,7 +288,7 @@ fun SettingsScreen(
 
     val doSave: suspend () -> Unit = {
         viewModel.save(
-            baseUrl = baseUrl, apiKey = apiKey, model = model,
+            baseUrl = baseUrl, apiKey = apiKey, model = model, fallbackModel = fallbackModel,
             targetLang = targetLang, sourceLang = sourceLang, prompt = prompt,
             textSize = textSize.toInt(), alpha = alpha,
             loopMs = loopInterval.toLongOrNull() ?: 2000L,
@@ -637,6 +642,7 @@ fun SettingsScreen(
             baseUrl = s.baseUrl
             apiKey = s.apiKey
             model = s.model
+            fallbackModel = s.fallbackModel
             prompt = migratedPrompt
             targetLang = s.targetLang
             sourceLang = s.sourceLang
@@ -819,6 +825,37 @@ fun SettingsScreen(
                 }
 
                 if (translatorEngine == TranslatorEngine.OPENAI) {
+                    val selectedPreset = OpenAiProviderPresets.ALL.firstOrNull {
+                        it.baseUrl.equals(baseUrl.trim(), ignoreCase = true)
+                    }
+                    ExposedDropdownMenuBox(
+                        expanded = providerPickerExpanded,
+                        onExpandedChange = { providerPickerExpanded = !providerPickerExpanded }
+                    ) {
+                        OutlinedTextField(
+                            value = selectedPreset?.label ?: stringResource(R.string.settings_provider_custom),
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text(stringResource(R.string.settings_provider_preset)) },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = providerPickerExpanded) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = providerPickerExpanded,
+                            onDismissRequest = { providerPickerExpanded = false }
+                        ) {
+                            OpenAiProviderPresets.ALL.forEach { preset ->
+                                DropdownMenuItem(
+                                    text = { Text(preset.label) },
+                                    onClick = {
+                                        baseUrl = preset.baseUrl
+                                        if (model.isBlank()) model = preset.models.firstOrNull().orEmpty()
+                                        providerPickerExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
                     OutlinedTextField(
                         value = baseUrl, onValueChange = { baseUrl = it },
                         label = { Text(stringResource(R.string.settings_base_url)) },
@@ -834,10 +871,53 @@ fun SettingsScreen(
                     )
                     OutlinedTextField(
                         value = model, onValueChange = { model = it },
-                        label = { Text(stringResource(R.string.settings_model)) },
+                        label = { Text(stringResource(R.string.settings_model_primary)) },
                         placeholder = { Text(stringResource(R.string.settings_model_placeholder)) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
+                    )
+                    if (!selectedPreset?.models.isNullOrEmpty()) {
+                        ExposedDropdownMenuBox(
+                            expanded = presetModelPickerExpanded,
+                            onExpandedChange = { presetModelPickerExpanded = !presetModelPickerExpanded }
+                        ) {
+                            OutlinedTextField(
+                                value = "",
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text(stringResource(R.string.settings_provider_model_preset)) },
+                                placeholder = { Text(selectedPreset!!.models.joinToString(" / ")) },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = presetModelPickerExpanded) },
+                                modifier = Modifier.menuAnchor().fillMaxWidth()
+                            )
+                            ExposedDropdownMenu(
+                                expanded = presetModelPickerExpanded,
+                                onDismissRequest = { presetModelPickerExpanded = false }
+                            ) {
+                                selectedPreset!!.models.forEach { id ->
+                                    DropdownMenuItem(
+                                        text = { Text(id) },
+                                        onClick = {
+                                            model = id
+                                            presetModelPickerExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    OutlinedTextField(
+                        value = fallbackModel,
+                        onValueChange = { fallbackModel = it },
+                        label = { Text(stringResource(R.string.settings_model_fallback)) },
+                        placeholder = { Text(stringResource(R.string.settings_model_fallback_placeholder)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Text(
+                        stringResource(R.string.settings_model_fallback_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     // 测试连接成功时，下面这块允许从拉到的 model 列表里选一个回填到 model 字段。
                     if (fetchedModels.isNotEmpty()) {
@@ -1013,6 +1093,7 @@ fun SettingsScreen(
                                     baseUrl = baseUrl,
                                     apiKey = apiKey,
                                     model = model,
+                                    fallbackModel = fallbackModel,
                                     deeplKey = deeplKey,
                                     deeplPro = deeplPro,
                                     deeplProtocol = deeplProtocol,

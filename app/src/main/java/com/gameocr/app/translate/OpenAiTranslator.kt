@@ -40,34 +40,51 @@ class OpenAiTranslator @Inject constructor(
         if (trimmed.isEmpty()) return null
         validate(settings)
 
-        val cacheKey = cache.key(trimmed, settings.model, settings.targetLang, settings.promptTemplate)
-        cache.get(cacheKey)?.let { return it }
-
-        val request = buildRequest(trimmed, settings, stream = false)
         val timedClient = client.withApiTimeout(settings.apiTimeoutSeconds)
-        val translated = withContext(Dispatchers.IO) {
-            timedClient.newCall(request).execute().use { resp ->
-                val raw = resp.body?.string().orEmpty()
-                if (!resp.isSuccessful) throw TranslationException("HTTP ${resp.code}: ${raw.take(200)}")
-                val parsed = runCatching { json.decodeFromString<ChatResponse>(raw) }
-                    .getOrElse {
-                        throw TranslationException(
-                            appContext.getString(R.string.err_openai_parse_failed_format, raw.take(200)),
-                            it
-                        )
+        var lastError: Throwable? = null
+        for (candidate in modelCandidates(settings)) {
+            val candidateSettings = settings.copy(model = candidate)
+            val cacheKey = cache.key(trimmed, candidateSettings.model, candidateSettings.targetLang, candidateSettings.promptTemplate)
+            cache.get(cacheKey)?.let { return it }
+
+            val request = buildRequest(trimmed, candidateSettings, stream = false)
+            val translated = runCatching {
+                withContext(Dispatchers.IO) {
+                    timedClient.newCall(request).execute().use { resp ->
+                        val raw = resp.body?.string().orEmpty()
+                        if (!resp.isSuccessful) throw TranslationException("HTTP ${resp.code}: ${raw.take(200)}")
+                        val parsed = runCatching { json.decodeFromString<ChatResponse>(raw) }
+                            .getOrElse {
+                                throw TranslationException(
+                                    appContext.getString(R.string.err_openai_parse_failed_format, raw.take(200)),
+                                    it
+                                )
+                            }
+                        parsed.choices.firstOrNull()?.message?.content?.trim()
+                            ?: throw TranslationException(appContext.getString(R.string.err_openai_no_choices))
                     }
-                parsed.choices.firstOrNull()?.message?.content?.trim()
-                    ?: throw TranslationException(appContext.getString(R.string.err_openai_no_choices))
+                }
+            }.onFailure { e ->
+                lastError = e
+                Timber.w(e, "OpenAI-compatible model failed: %s", candidate)
+            }.getOrNull()
+
+            if (translated != null) {
+                cache.put(cacheKey, translated)
+                return translated
             }
         }
-        cache.put(cacheKey, translated)
-        return translated
+        throw lastError ?: TranslationException(appContext.getString(R.string.err_openai_no_choices))
     }
 
     override fun translateStream(source: String, settings: Settings): Flow<String> = flow {
         val trimmed = source.trim()
         if (trimmed.isEmpty()) return@flow
         validate(settings)
+        if (settings.fallbackModel.isNotBlank()) {
+            translate(trimmed, settings)?.let { emit(it) }
+            return@flow
+        }
 
         val cacheKey = cache.key(trimmed, settings.model, settings.targetLang, settings.promptTemplate)
         cache.get(cacheKey)?.let {
@@ -195,6 +212,11 @@ class OpenAiTranslator @Inject constructor(
             throw TranslationException(appContext.getString(R.string.err_openai_no_api_key))
         }
     }
+
+    private fun modelCandidates(settings: Settings): List<String> =
+        listOf(settings.model.trim(), settings.fallbackModel.trim())
+            .filter { it.isNotBlank() }
+            .distinct()
 
     private fun buildRequest(text: String, settings: Settings, stream: Boolean): Request {
         val targetDisplay = Languages.nameOf(appContext, settings.targetLang)

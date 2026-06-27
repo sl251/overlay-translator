@@ -4,5 +4,5 @@
     <color name="white">#FFFFFFFF</color>
     <color name="overlay_bg">#B3000000</color>
     <color name="overlay_text">#FFFFFFFF</color>
-    <color name="floating_button">#B30A84FF</color>
+    <color name="floating_button">#CC111111</color>
 </resources>
