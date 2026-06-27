@@ -173,7 +173,6 @@ fun MainScreen(
             onDismissRequest = { showClearRegionDialog = false },
             shape = AppleCardShape,
             containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-            tonalElevation = 0.dp,
             title = { Text(stringResource(R.string.main_clear_region_dialog_title)) },
             text = { Text(stringResource(R.string.main_clear_region_dialog_msg)) },
             confirmButton = {
@@ -364,11 +363,9 @@ private fun Modifier.appleGlass(
         Color.White.copy(alpha = 0.78f)
     }
     val highlight = if (dark) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.86f)
-    val ambient = if (dark) Color.Black.copy(alpha = 0.44f) else Color(0xFF355070).copy(alpha = 0.10f)
-    val spot = if (dark) Color.Black.copy(alpha = 0.30f) else Color(0xFF1D3557).copy(alpha = 0.05f)
     return this
-        .shadow(elevation, shape, clip = false, ambientColor = ambient, spotColor = spot)
-        .shadow(3.dp, shape, clip = false, ambientColor = Color.White.copy(alpha = 0.10f), spotColor = Color.Transparent)
+        .shadow(elevation, shape, clip = false)
+        .shadow(3.dp, shape, clip = false)
         .clip(shape)
         .background(glassColor, shape)
         .border(1.dp, highlight, shape)
@@ -441,9 +438,7 @@ private fun AppleActionButton(
             .shadow(
                 elevation = if (tone == ButtonTone.Secondary) 8.dp else 16.dp,
                 shape = ApplePillShape,
-                clip = false,
-                ambientColor = Color(0xFF1D3557).copy(alpha = if (tone == ButtonTone.Secondary) 0.07f else 0.14f),
-                spotColor = Color(0xFF1D3557).copy(alpha = if (tone == ButtonTone.Secondary) 0.03f else 0.08f)
+                clip = false
             )
             .clip(ApplePillShape)
             .background(container, ApplePillShape)
@@ -539,9 +534,7 @@ private fun ModeToggleItem(
             .shadow(
                 elevation = if (selected) 8.dp else 0.dp,
                 shape = ApplePillShape,
-                clip = false,
-                ambientColor = Color.Black.copy(alpha = 0.08f),
-                spotColor = Color.Black.copy(alpha = 0.03f)
+                clip = false
             )
             .clip(ApplePillShape)
             .background(color, ApplePillShape)
@@ -744,7 +737,6 @@ private fun UpdateResultDialog(
                 onDismissRequest = onDismiss,
                 shape = AppleCardShape,
                 containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-                tonalElevation = 0.dp,
                 title = {
                     Text(stringResource(
                         if (info.hasUpdate) R.string.update_dialog_title_new
@@ -793,7 +785,6 @@ private fun UpdateResultDialog(
                 onDismissRequest = onDismiss,
                 shape = AppleCardShape,
                 containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-                tonalElevation = 0.dp,
                 title = { Text(stringResource(R.string.update_dialog_title_failed)) },
                 text = {
                     Text(stringResource(R.string.update_dialog_failed_format, state.errorMessage))
@@ -875,9 +866,7 @@ private fun StatusChip(label: String, ok: Boolean, detail: String? = null) {
             .shadow(
                 elevation = 6.dp,
                 shape = RoundedCornerShape(18.dp),
-                clip = false,
-                ambientColor = Color(0xFF1D3557).copy(alpha = 0.06f),
-                spotColor = Color(0xFF1D3557).copy(alpha = 0.02f)
+                clip = false
             )
             .clip(RoundedCornerShape(18.dp))
             .background(MaterialTheme.colorScheme.surface.copy(alpha = if (isDarkThemeSurface()) 0.10f else 0.62f))
