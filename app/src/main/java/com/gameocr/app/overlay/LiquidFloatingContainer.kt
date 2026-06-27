@@ -73,6 +73,31 @@ internal class LiquidFloatingContainer(context: Context) : FrameLayout(context) 
             }
         }
 
+    var shadowColor: Int = 0x33000000
+        set(value) {
+            if (field != value) {
+                field = value
+                shadowPaint.color = value
+                invalidate()
+            }
+        }
+
+    var shadowRadiusPx: Float = 0f
+        set(value) {
+            if (field != value) {
+                field = value
+                invalidate()
+            }
+        }
+
+    var shadowOffsetYPx: Float = 0f
+        set(value) {
+            if (field != value) {
+                field = value
+                invalidate()
+            }
+        }
+
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
         color = fillColor
@@ -80,6 +105,10 @@ internal class LiquidFloatingContainer(context: Context) : FrameLayout(context) 
     private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         color = strokeColor
+    }
+    private val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = shadowColor
     }
     private val fillPath = Path()
     private val strokePath = Path()
@@ -142,10 +171,20 @@ internal class LiquidFloatingContainer(context: Context) : FrameLayout(context) 
     }
 
     private fun drawCircle(canvas: Canvas, cx: Float, cy: Float) {
+        drawCircleShadow(canvas, cx, cy)
         canvas.drawCircle(cx, cy, ballRadius, fillPaint)
         if (strokeWidthPx > 0f) {
             canvas.drawCircle(cx, cy, ballRadius - strokeWidthPx / 2f, strokePaint)
         }
+    }
+
+    private fun drawCircleShadow(canvas: Canvas, cx: Float, cy: Float) {
+        if (shadowRadiusPx <= 0f) return
+        shadowPaint.alpha = 38
+        canvas.drawCircle(cx, cy + shadowOffsetYPx, ballRadius + shadowRadiusPx * 0.42f, shadowPaint)
+        shadowPaint.alpha = 18
+        canvas.drawCircle(cx, cy + shadowOffsetYPx * 0.45f, ballRadius + shadowRadiusPx * 0.18f, shadowPaint)
+        shadowPaint.color = shadowColor
     }
 
     /**
@@ -216,6 +255,17 @@ internal class LiquidFloatingContainer(context: Context) : FrameLayout(context) 
         fillPath.arcTo(ballRect, nearStart, nearSweep, false)
         fillPath.quadTo(ctrlDnX, ctrlDnY, edgeX, p2y)
         fillPath.close()
+        if (shadowRadiusPx > 0f) {
+            canvas.save()
+            canvas.translate(0f, shadowOffsetYPx)
+            shadowPaint.alpha = 34
+            canvas.drawPath(fillPath, shadowPaint)
+            canvas.drawCircle(cx, cy, r + shadowRadiusPx * 0.34f, shadowPaint)
+            shadowPaint.alpha = 16
+            canvas.drawCircle(cx, cy, r + shadowRadiusPx * 0.12f, shadowPaint)
+            shadowPaint.color = shadowColor
+            canvas.restore()
+        }
         canvas.drawPath(fillPath, fillPaint)
 
         // 球本体

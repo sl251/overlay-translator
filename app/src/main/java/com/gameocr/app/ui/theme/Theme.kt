@@ -7,114 +7,113 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-// shadcn/UI Slate palette —— 冷调深蓝灰，深色 surface 偏深蓝（不是纯中性灰）。
-val Slate50 = Color(0xFFF8FAFC)
-val Slate100 = Color(0xFFF1F5F9)
-val Slate200 = Color(0xFFE2E8F0)
-val Slate300 = Color(0xFFCBD5E1)
-val Slate400 = Color(0xFF94A3B8)
-val Slate500 = Color(0xFF64748B)
-val Slate600 = Color(0xFF475569)
-val Slate700 = Color(0xFF334155)
-val Slate800 = Color(0xFF1E293B)
-val Slate900 = Color(0xFF0F172A)
-val Slate950 = Color(0xFF020617)
+// Apple-inspired neutral palette: quiet whites, graphite text, one restrained system-blue accent.
+val AppleWhite = Color(0xFFFFFFFF)
+val AppleMist = Color(0xFFF7F8FA)
+val AppleCloud = Color(0xFFEFF2F6)
+val AppleLine = Color(0xFFDCE2EA)
+val AppleSecondary = Color(0xFF6E7783)
+val AppleGraphite = Color(0xFF1D1D1F)
+val AppleInk = Color(0xFF0B0F17)
+val AppleBlue = Color(0xFF007AFF)
+val AppleBlueSoft = Color(0xFFE7F1FF)
+val AppleDarkBg = Color(0xFF090B10)
+val AppleDarkPanel = Color(0xFF151820)
+val AppleDarkPanelHigh = Color(0xFF20242E)
 
 /**
- * Slate 冷蓝灰主题。覆盖所有 Material3 surface 体系，避免默认 surfaceTint=primary
- * 导致 Card / Surface 染上紫调。
+ * Apple-style 极简主题。覆盖 Material3 surface 体系，避免默认紫调，保持单一蓝色点缀。
  */
-private val SlateLight = lightColorScheme(
-    primary = Slate900,
-    onPrimary = Slate50,
-    primaryContainer = Slate200,
-    onPrimaryContainer = Slate900,
+private val AppleLight = lightColorScheme(
+    primary = AppleBlue,
+    onPrimary = AppleWhite,
+    primaryContainer = AppleBlueSoft,
+    onPrimaryContainer = AppleInk,
 
-    secondary = Slate700,
-    onSecondary = Slate50,
-    secondaryContainer = Slate200,
-    onSecondaryContainer = Slate800,
+    secondary = AppleGraphite,
+    onSecondary = AppleWhite,
+    secondaryContainer = AppleCloud,
+    onSecondaryContainer = AppleGraphite,
 
-    tertiary = Slate600,
-    onTertiary = Slate50,
-    tertiaryContainer = Slate100,
-    onTertiaryContainer = Slate800,
+    tertiary = AppleSecondary,
+    onTertiary = AppleWhite,
+    tertiaryContainer = AppleCloud,
+    onTertiaryContainer = AppleGraphite,
 
-    background = Slate50,
-    onBackground = Slate900,
-    surface = Color.White,
-    onSurface = Slate900,
-    surfaceVariant = Slate100,
-    onSurfaceVariant = Slate600,
+    background = AppleMist,
+    onBackground = AppleGraphite,
+    surface = AppleWhite,
+    onSurface = AppleGraphite,
+    surfaceVariant = AppleCloud,
+    onSurfaceVariant = AppleSecondary,
 
-    // 完整 surface tones —— 消除紫调
-    surfaceTint = Slate500,
-    surfaceBright = Color.White,
-    surfaceDim = Slate200,
-    surfaceContainer = Slate100,
-    surfaceContainerLowest = Color.White,
-    surfaceContainerLow = Slate50,
-    surfaceContainerHigh = Slate200,
-    surfaceContainerHighest = Slate300,
+    surfaceTint = AppleBlue,
+    surfaceBright = AppleWhite,
+    surfaceDim = AppleCloud,
+    surfaceContainer = Color(0xFFF3F5F8),
+    surfaceContainerLowest = AppleWhite,
+    surfaceContainerLow = AppleMist,
+    surfaceContainerHigh = AppleCloud,
+    surfaceContainerHighest = AppleLine,
 
-    inverseSurface = Slate900,
-    inverseOnSurface = Slate50,
-    inversePrimary = Slate300,
+    inverseSurface = AppleInk,
+    inverseOnSurface = AppleWhite,
+    inversePrimary = Color(0xFF8CC8FF),
 
-    outline = Slate300,
-    outlineVariant = Slate200,
+    outline = AppleLine,
+    outlineVariant = Color(0xBFFFFFFF),
     scrim = Color(0x66000000),
 
-    error = Color(0xFFDC2626),
-    onError = Color.White,
-    errorContainer = Color(0xFFFEE2E2),
-    onErrorContainer = Color(0xFF7F1D1D),
+    error = Color(0xFFFF3B30),
+    onError = AppleWhite,
+    errorContainer = Color(0xFFFFE9E7),
+    onErrorContainer = Color(0xFF7A1711),
 )
 
-private val SlateDark = darkColorScheme(
-    primary = Slate50,
-    onPrimary = Slate900,
-    primaryContainer = Slate800,
-    onPrimaryContainer = Slate50,
+private val AppleDark = darkColorScheme(
+    primary = Color(0xFF0A84FF),
+    onPrimary = AppleWhite,
+    primaryContainer = Color(0xFF103B66),
+    onPrimaryContainer = Color(0xFFE8F3FF),
 
-    secondary = Slate300,
-    onSecondary = Slate900,
-    secondaryContainer = Slate800,
-    onSecondaryContainer = Slate200,
+    secondary = Color(0xFFE8EAEE),
+    onSecondary = AppleInk,
+    secondaryContainer = AppleDarkPanelHigh,
+    onSecondaryContainer = Color(0xFFE8EAEE),
 
-    tertiary = Slate400,
-    onTertiary = Slate900,
-    tertiaryContainer = Slate800,
-    onTertiaryContainer = Slate100,
+    tertiary = Color(0xFFB8C0CC),
+    onTertiary = AppleInk,
+    tertiaryContainer = AppleDarkPanel,
+    onTertiaryContainer = Color(0xFFE8EAEE),
 
-    background = Slate950,
-    onBackground = Slate50,
-    surface = Slate900,
-    onSurface = Slate50,
-    surfaceVariant = Slate800,
-    onSurfaceVariant = Slate400,
+    background = AppleDarkBg,
+    onBackground = Color(0xFFF5F7FA),
+    surface = AppleDarkPanel,
+    onSurface = Color(0xFFF5F7FA),
+    surfaceVariant = AppleDarkPanelHigh,
+    onSurfaceVariant = Color(0xFFB4BBC6),
 
-    surfaceTint = Slate500,
-    surfaceBright = Slate800,
-    surfaceDim = Slate950,
-    surfaceContainer = Slate900,
-    surfaceContainerLowest = Slate950,
-    surfaceContainerLow = Slate900,
-    surfaceContainerHigh = Slate800,
-    surfaceContainerHighest = Slate700,
+    surfaceTint = Color(0xFF0A84FF),
+    surfaceBright = AppleDarkPanelHigh,
+    surfaceDim = AppleDarkBg,
+    surfaceContainer = AppleDarkPanel,
+    surfaceContainerLowest = AppleDarkBg,
+    surfaceContainerLow = Color(0xFF10131A),
+    surfaceContainerHigh = AppleDarkPanelHigh,
+    surfaceContainerHighest = Color(0xFF2C313D),
 
-    inverseSurface = Slate100,
-    inverseOnSurface = Slate900,
-    inversePrimary = Slate700,
+    inverseSurface = Color(0xFFF5F7FA),
+    inverseOnSurface = AppleInk,
+    inversePrimary = AppleBlue,
 
-    outline = Slate700,
-    outlineVariant = Slate800,
+    outline = Color(0xFF343A46),
+    outlineVariant = Color(0x22FFFFFF),
     scrim = Color(0x99000000),
 
-    error = Color(0xFFEF4444),
-    onError = Slate950,
-    errorContainer = Color(0xFF7F1D1D),
-    onErrorContainer = Color(0xFFFECACA),
+    error = Color(0xFFFF453A),
+    onError = AppleInk,
+    errorContainer = Color(0xFF5A1712),
+    onErrorContainer = Color(0xFFFFDAD6),
 )
 
 /** 主题模式：值与 [com.gameocr.app.data.ThemeModePrefs] 中的常量对应。 */
@@ -135,7 +134,7 @@ fun GameOcrTheme(
         else -> isSystemInDarkTheme()
     }
     MaterialTheme(
-        colorScheme = if (darkTheme) SlateDark else SlateLight,
+        colorScheme = if (darkTheme) AppleDark else AppleLight,
         content = content
     )
 }

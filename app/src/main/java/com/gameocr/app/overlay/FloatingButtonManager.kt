@@ -144,9 +144,9 @@ class FloatingButtonManager(
 
         val density = context.resources.displayMetrics.density
         val size = (sizeDp.coerceIn(28, 128) * density).toInt()  // 球直径
-        // 容器横纵 1.3x：球本体距屏幕边仅 0.3R，紧贴边；弧线短小（≈0.3R 横向）
-        val containerW = (size * 1.3f).toInt()
-        val containerH = (size * 1.4f).toInt()
+        // 容器给玻璃球和弥散阴影留呼吸空间；dock 时 LiquidFloatingContainer 仍会让球体贴边。
+        val containerW = (size * 1.55f).toInt()
+        val containerH = (size * 1.65f).toInt()
 
         val iv = ImageView(context).apply {
             setImageResource(R.drawable.ic_overlay_button)
@@ -161,8 +161,11 @@ class FloatingButtonManager(
             fillColor = androidx.core.content.ContextCompat.getColor(
                 this@FloatingButtonManager.context, R.color.floating_button
             )
-            strokeColor = 0xFFFFFFFF.toInt()
-            strokeWidthPx = 2f * density
+            strokeColor = 0xBFFFFFFF.toInt()
+            strokeWidthPx = 1.2f * density
+            shadowColor = 0x660A84FF.toInt()
+            shadowRadiusPx = 10f * density
+            shadowOffsetYPx = 6f * density
             ballRadius = size / 2f
             addView(iv, FrameLayout.LayoutParams(size, size, Gravity.CENTER))
             addView(progress, FrameLayout.LayoutParams(size, size, Gravity.CENTER))
@@ -207,11 +210,13 @@ class FloatingButtonManager(
         val container = liquidView ?: return
         val density = context.resources.displayMetrics.density
         val size = (sizeDp.coerceIn(28, 128) * density).toInt()
-        val containerW = (size * 1.3f).toInt()
-        val containerH = (size * 1.4f).toInt()
+        val containerW = (size * 1.55f).toInt()
+        val containerH = (size * 1.65f).toInt()
         params.width = containerW
         params.height = containerH
         container.ballRadius = size / 2f
+        container.shadowRadiusPx = 10f * density
+        container.shadowOffsetYPx = 6f * density
         // 子 view (ImageView + LoopProgressView) 重新调 size×size 居中
         for (i in 0 until container.childCount) {
             val child = container.getChildAt(i)
@@ -752,6 +757,6 @@ class FloatingButtonManager(
         /** 自动贴边倒计时（ms）。固定 3s，未做成可配（产品决策）。 */
         private const val AUTO_DOCK_DELAY_MS: Long = 3000L
         /** 弧形菜单按钮稳定后的 alpha。略低于 1，给点透明感能透出后面的内容但又不影响图标识别。 */
-        private const val MENU_ITEM_ALPHA: Float = 0.85f
+        private const val MENU_ITEM_ALPHA: Float = 0.92f
     }
 }

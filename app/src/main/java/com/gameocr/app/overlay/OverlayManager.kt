@@ -69,7 +69,8 @@ class OverlayManager(
         val container = FrameLayout(context).apply {
             background = GradientDrawable().apply {
                 cornerRadius = 999f
-                setColor(0xC0000000.toInt())
+                setColor(0xAA1D1D1F.toInt())
+                setStroke((1 * density).toInt().coerceAtLeast(1), 0x66FFFFFF)
             }
             setPadding(pad, pad, pad, pad)
         }
@@ -125,8 +126,9 @@ class OverlayManager(
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             background = GradientDrawable().apply {
-                cornerRadius = 12f
-                setColor(0xF0B71C1C.toInt())
+                cornerRadius = 22f * density
+                setColor(0xE6FF3B30.toInt())
+                setStroke((1 * density).toInt().coerceAtLeast(1), 0x66FFFFFF)
             }
             setPadding(padH, padV, padH, padV)
             addView(tv)
@@ -273,8 +275,9 @@ class OverlayManager(
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             background = GradientDrawable().apply {
-                cornerRadius = 12f
-                setColor(0xE6303030.toInt()) // 深灰半透明（区别于 error 的红色）
+                cornerRadius = 22f * density
+                setColor(0xB31D1D1F.toInt()) // 玻璃深灰半透明（区别于 error 的红色）
+                setStroke((1 * density).toInt().coerceAtLeast(1), 0x66FFFFFF)
             }
             setPadding(padH, padV, padH, padV)
             addView(tv)
@@ -431,8 +434,10 @@ class OverlayManager(
                 if (placement == OverlayPlacement.OVERLAP) {
                     minWidth = origW
                     minHeight = origH
-                    setPadding(8, 4, 8, 4)
                 }
+                val padH = (10 * dm.density).toInt()
+                val padV = (6 * dm.density).toInt()
+                setPadding(padH, padV, padH, padV)
             }
 
             val lp = FrameLayout.LayoutParams(
@@ -520,23 +525,24 @@ class OverlayManager(
     }
 
     private fun themeBg(): GradientDrawable = GradientDrawable().apply {
-        cornerRadius = 8f
+        val density = context.resources.displayMetrics.density
+        cornerRadius = 18f * density
         setColor(when (theme) {
             OverlayTheme.CLASSIC_DARK -> 0xE6000000.toInt()
             OverlayTheme.AMBER_GOLD -> 0xF0241608.toInt()
             OverlayTheme.PAPER_LIGHT -> 0xF0F5EFE0.toInt()
-            OverlayTheme.FROST_GLASS -> 0xCC1E293B.toInt()
+            OverlayTheme.FROST_GLASS -> 0xB31D1D1F.toInt()
             OverlayTheme.CUSTOM -> customBg
         })
         when (theme) {
             OverlayTheme.AMBER_GOLD -> setStroke(2, 0xFFB8860B.toInt())
             OverlayTheme.PAPER_LIGHT -> setStroke(1, 0xFFB68850.toInt())
-            OverlayTheme.FROST_GLASS -> setStroke(1, 0xFF60A5FA.toInt())
+            OverlayTheme.FROST_GLASS -> setStroke((1 * density).toInt().coerceAtLeast(1), 0x66FFFFFF)
+            OverlayTheme.CLASSIC_DARK -> setStroke((1 * density).toInt().coerceAtLeast(1), 0x33FFFFFF)
             OverlayTheme.CUSTOM -> if (customBorderWidthDp > 0) {
-                val px = (customBorderWidthDp * context.resources.displayMetrics.density).toInt()
+                val px = (customBorderWidthDp * density).toInt()
                 setStroke(px, customBorder)
             }
-            else -> { /* CLASSIC_DARK: 无边 */ }
         }
     }
 }

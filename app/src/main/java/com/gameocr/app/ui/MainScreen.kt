@@ -4,8 +4,15 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,18 +34,11 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -47,6 +47,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -61,9 +62,14 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -165,6 +171,9 @@ fun MainScreen(
     if (showClearRegionDialog) {
         AlertDialog(
             onDismissRequest = { showClearRegionDialog = false },
+            shape = AppleCardShape,
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+            tonalElevation = 0.dp,
             title = { Text(stringResource(R.string.main_clear_region_dialog_title)) },
             text = { Text(stringResource(R.string.main_clear_region_dialog_msg)) },
             confirmButton = {
@@ -206,7 +215,8 @@ fun MainScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+                    containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.78f),
+                    scrolledContainerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.88f)
                 )
             )
         },
@@ -217,8 +227,8 @@ fun MainScreen(
                 .fillMaxSize()
                 .padding(inner)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 20.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
             val shizukuUsable = shizukuAvail == ShizukuCapabilities.Availability.READY ||
                 shizukuAvail == ShizukuCapabilities.Availability.INSTALLED_NOT_GRANTED
@@ -278,17 +288,21 @@ fun MainScreen(
 
             // 区域
             ActionCard(title = stringResource(R.string.main_section_region)) {
-                OutlinedButton(
+                AppleActionButton(
+                    text = stringResource(R.string.main_btn_pick_region),
                     modifier = Modifier.fillMaxWidth(),
+                    tone = ButtonTone.Secondary,
                     onClick = { context.startActivity(RegionPickerActivity.newIntent(context)) }
-                ) { Text(stringResource(R.string.main_btn_pick_region)) }
+                )
                 if (region != null) {
                     // 跟「选择截屏区域」按钮同样的 OutlinedButton 样式，视觉对等；
                     // 清除是破坏性操作，弹二次确认避免误触。
-                    OutlinedButton(
+                    AppleActionButton(
+                        text = stringResource(R.string.main_btn_clear_region),
                         modifier = Modifier.fillMaxWidth(),
+                        tone = ButtonTone.Secondary,
                         onClick = { showClearRegionDialog = true }
-                    ) { Text(stringResource(R.string.main_btn_clear_region)) }
+                    )
                 }
             }
 
@@ -296,26 +310,26 @@ fun MainScreen(
             // 电池白名单可通过 PowerManager 检测当前状态，已加入时按钮显示已开启并禁用，
             // 让用户清楚下一步该点哪个；自启动没有公开 API 可探测，按钮始终可点。
             ActionCard(title = stringResource(R.string.main_section_rom_guide)) {
-                OutlinedButton(
+                AppleActionButton(
+                    text = stringResource(R.string.main_btn_open_autostart),
                     modifier = Modifier.fillMaxWidth(),
+                    tone = ButtonTone.Secondary,
                     onClick = {
                         RomHelper.launchFirstAvailable(context, RomHelper.autoStartIntents(context))
                     }
-                ) { Text(stringResource(R.string.main_btn_open_autostart)) }
-                OutlinedButton(
+                )
+                AppleActionButton(
+                    text = stringResource(
+                        if (batteryOk) R.string.main_btn_battery_already_ok
+                        else R.string.main_btn_open_battery_whitelist
+                    ),
                     enabled = !batteryOk,
                     modifier = Modifier.fillMaxWidth(),
+                    tone = ButtonTone.Secondary,
                     onClick = {
                         RomHelper.launchFirstAvailable(context, RomHelper.batteryWhitelistIntents(context))
                     }
-                ) {
-                    Text(
-                        stringResource(
-                            if (batteryOk) R.string.main_btn_battery_already_ok
-                            else R.string.main_btn_open_battery_whitelist
-                        )
-                    )
-                }
+                )
             }
 
             // 关于：放在主屏底部，方便用户一眼看到版本号 / GitHub
@@ -330,6 +344,218 @@ fun MainScreen(
 }
 
 private const val GITHUB_URL = "https://github.com/ciddwd/overlay-translator"
+private val AppleCardShape = RoundedCornerShape(24.dp)
+private val ApplePanelShape = RoundedCornerShape(28.dp)
+private val ApplePillShape = RoundedCornerShape(999.dp)
+
+@Composable
+private fun isDarkThemeSurface(): Boolean =
+    MaterialTheme.colorScheme.background.luminance() < 0.5f
+
+@Composable
+private fun Modifier.appleGlass(
+    shape: RoundedCornerShape = AppleCardShape,
+    elevation: Dp = 22.dp
+): Modifier {
+    val dark = isDarkThemeSurface()
+    val glassColor = if (dark) {
+        MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+    } else {
+        Color.White.copy(alpha = 0.78f)
+    }
+    val highlight = if (dark) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.86f)
+    val ambient = if (dark) Color.Black.copy(alpha = 0.44f) else Color(0xFF355070).copy(alpha = 0.10f)
+    val spot = if (dark) Color.Black.copy(alpha = 0.30f) else Color(0xFF1D3557).copy(alpha = 0.05f)
+    return this
+        .shadow(elevation, shape, clip = false, ambientColor = ambient, spotColor = spot)
+        .shadow(3.dp, shape, clip = false, ambientColor = Color.White.copy(alpha = 0.10f), spotColor = Color.Transparent)
+        .clip(shape)
+        .background(glassColor, shape)
+        .border(1.dp, highlight, shape)
+}
+
+@Composable
+private fun AppleGlassPanel(
+    modifier: Modifier = Modifier,
+    shape: RoundedCornerShape = AppleCardShape,
+    elevation: Dp = 22.dp,
+    content: @Composable Column.() -> Unit
+) {
+    Column(
+        modifier = modifier.appleGlass(shape = shape, elevation = elevation).padding(22.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        content = content
+    )
+}
+
+@Composable
+private fun AppleActionButton(
+    text: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    tone: ButtonTone = ButtonTone.Primary,
+    icon: @Composable (() -> Unit)? = null,
+    onClick: () -> Unit
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.985f else 1f,
+        animationSpec = tween(durationMillis = 300),
+        label = "button-scale"
+    )
+    val offset by animateDpAsState(
+        targetValue = if (pressed) 1.dp else 0.dp,
+        animationSpec = tween(durationMillis = 300),
+        label = "button-offset"
+    )
+    val dark = isDarkThemeSurface()
+    val targetColor = when (tone) {
+        ButtonTone.Primary -> if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+        ButtonTone.Danger -> MaterialTheme.colorScheme.errorContainer
+        ButtonTone.Secondary -> if (dark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.62f)
+    }
+    val targetContent = when (tone) {
+        ButtonTone.Primary -> if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+        ButtonTone.Danger -> MaterialTheme.colorScheme.onErrorContainer
+        ButtonTone.Secondary -> MaterialTheme.colorScheme.onSurface
+    }
+    val container by animateColorAsState(targetColor, tween(300), label = "button-color")
+    val contentColor by animateColorAsState(targetContent, tween(300), label = "button-content")
+    val outline = if (tone == ButtonTone.Secondary) {
+        if (dark) Color.White.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.74f)
+    } else {
+        Color.White.copy(alpha = 0.18f)
+    }
+
+    CompositionLocalProvider(LocalContentColor provides contentColor) {
+    Row(
+        modifier = modifier
+            .height(56.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                translationY = offset.toPx()
+                alpha = if (enabled) 1f else 0.56f
+            }
+            .shadow(
+                elevation = if (tone == ButtonTone.Secondary) 8.dp else 16.dp,
+                shape = ApplePillShape,
+                clip = false,
+                ambientColor = Color(0xFF1D3557).copy(alpha = if (tone == ButtonTone.Secondary) 0.07f else 0.14f),
+                spotColor = Color(0xFF1D3557).copy(alpha = if (tone == ButtonTone.Secondary) 0.03f else 0.08f)
+            )
+            .clip(ApplePillShape)
+            .background(container, ApplePillShape)
+            .border(1.dp, outline, ApplePillShape)
+            .clickable(
+                enabled = enabled,
+                interactionSource = interaction,
+                indication = null,
+                onClick = onClick
+            )
+            .padding(horizontal = 18.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (icon != null) {
+            icon()
+            Box(Modifier.size(8.dp))
+        }
+        Text(
+            text = text,
+            color = contentColor,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+    }
+}
+
+private enum class ButtonTone { Primary, Secondary, Danger }
+
+@Composable
+private fun AppleModeToggle(
+    selected: StartMode,
+    shizukuEnabled: Boolean,
+    serviceRunning: Boolean,
+    onSelect: (StartMode) -> Unit
+) {
+    val dark = isDarkThemeSurface()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ApplePillShape)
+            .background(if (dark) Color.White.copy(alpha = 0.06f) else Color(0xFFE9EEF5).copy(alpha = 0.72f), ApplePillShape)
+            .border(1.dp, if (dark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.70f), ApplePillShape)
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        ModeToggleItem(
+            label = stringResource(R.string.main_mode_standard),
+            selected = selected == StartMode.MEDIA_PROJECTION,
+            enabled = !serviceRunning,
+            modifier = Modifier.weight(1f)
+        ) { onSelect(StartMode.MEDIA_PROJECTION) }
+        ModeToggleItem(
+            label = stringResource(R.string.main_mode_quiet),
+            selected = selected == StartMode.SHIZUKU,
+            enabled = !serviceRunning && shizukuEnabled,
+            modifier = Modifier.weight(1f)
+        ) { onSelect(StartMode.SHIZUKU) }
+    }
+}
+
+@Composable
+private fun ModeToggleItem(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.98f else 1f, tween(300), label = "mode-scale")
+    val color by animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.surface.copy(alpha = if (isDarkThemeSurface()) 0.16f else 0.92f)
+        else Color.Transparent,
+        tween(300),
+        label = "mode-color"
+    )
+    val textColor by animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+        tween(300),
+        label = "mode-text"
+    )
+    Box(
+        modifier = modifier
+            .height(44.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                alpha = if (enabled) 1f else 0.42f
+            }
+            .shadow(
+                elevation = if (selected) 8.dp else 0.dp,
+                shape = ApplePillShape,
+                clip = false,
+                ambientColor = Color.Black.copy(alpha = 0.08f),
+                spotColor = Color.Black.copy(alpha = 0.03f)
+            )
+            .clip(ApplePillShape)
+            .background(color, ApplePillShape)
+            .clickable(
+                enabled = enabled,
+                interactionSource = interaction,
+                indication = null,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, color = textColor, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+    }
+}
 
 @Composable
 private fun CaptureControlCard(
@@ -353,19 +579,11 @@ private fun CaptureControlCard(
     val titleRes = if (serviceRunning) R.string.main_hero_running_title else R.string.main_hero_ready_title
     val subtitleRes = if (serviceRunning) R.string.main_hero_running_subtitle else R.string.main_hero_ready_subtitle
 
-    Card(
+    AppleGlassPanel(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        shape = ApplePanelShape,
+        elevation = 28.dp
     ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
             StatusBadge(
                 label = stringResource(
                     if (serviceRunning) R.string.main_status_running else R.string.main_status_idle
@@ -380,67 +598,50 @@ private fun CaptureControlCard(
             Text(
                 stringResource(subtitleRes),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             if (serviceRunning) {
-                Button(
+                AppleActionButton(
+                    text = stringResource(R.string.main_action_stop),
                     modifier = Modifier.fillMaxWidth().height(56.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer
-                    ),
+                    tone = ButtonTone.Danger,
+                    icon = { Icon(Icons.Default.Stop, contentDescription = null) },
                     onClick = onStop
-                ) {
-                    Icon(Icons.Default.Stop, contentDescription = null)
-                    Text(stringResource(R.string.main_action_stop), modifier = Modifier.padding(start = 8.dp))
-                }
+                )
             } else if (!canDrawOverlay) {
-                Button(
+                AppleActionButton(
+                    text = stringResource(R.string.main_action_grant_overlay_first),
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                     onClick = onGrantOverlay
-                ) {
-                    Text(stringResource(R.string.main_action_grant_overlay_first))
-                }
+                )
             } else {
-                Button(
+                AppleActionButton(
+                    text = stringResource(R.string.main_action_start_overlay),
                     modifier = Modifier.fillMaxWidth().height(56.dp),
+                    icon = { Icon(Icons.Default.PlayArrow, contentDescription = null) },
                     onClick = onStart
-                ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null)
-                    Text(stringResource(R.string.main_action_start_overlay), modifier = Modifier.padding(start = 8.dp))
-                }
+                )
             }
 
             if (canDrawOverlay) {
                 Text(
                     stringResource(R.string.main_label_start_mode),
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    SegmentedButton(
-                        selected = startMode == StartMode.MEDIA_PROJECTION,
-                        onClick = { onSelectMode(StartMode.MEDIA_PROJECTION) },
-                        enabled = !serviceRunning,
-                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                        label = { Text(stringResource(R.string.main_mode_standard)) }
-                    )
-                    SegmentedButton(
-                        selected = startMode == StartMode.SHIZUKU,
-                        onClick = { onSelectMode(StartMode.SHIZUKU) },
-                        enabled = !serviceRunning && shizukuUsable,
-                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                        label = { Text(stringResource(R.string.main_mode_quiet)) }
-                    )
-                }
+                AppleModeToggle(
+                    selected = startMode,
+                    shizukuEnabled = shizukuUsable,
+                    serviceRunning = serviceRunning,
+                    onSelect = onSelectMode
+                )
                 Text(
                     stringResource(hintRes),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        }
     }
 }
 
@@ -450,8 +651,13 @@ private fun StatusBadge(label: String, active: Boolean) {
         modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
             .background(
-                if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-                else MaterialTheme.colorScheme.surface.copy(alpha = 0.56f)
+                if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.46f)
+            )
+            .border(
+                1.dp,
+                if (isDarkThemeSurface()) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.66f),
+                RoundedCornerShape(999.dp)
             )
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -495,7 +701,8 @@ private fun AboutContent() {
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.primary
     )
-    OutlinedButton(
+    AppleActionButton(
+        text = stringResource(R.string.settings_about_open_github),
         onClick = {
             runCatching {
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(GITHUB_URL))
@@ -503,23 +710,22 @@ private fun AboutContent() {
                 context.startActivity(intent)
             }
         },
-        modifier = Modifier.fillMaxWidth()
-    ) { Text(stringResource(R.string.settings_about_open_github)) }
+        modifier = Modifier.fillMaxWidth(),
+        tone = ButtonTone.Secondary
+    )
 
     // 检查更新：调 GitHub Releases API，失败让用户手动打开 Release 页（国内访问 api.github.com 偶尔抽风）
-    OutlinedButton(
+    AppleActionButton(
+        text = stringResource(
+            if (updateState is com.gameocr.app.update.UpdateViewModel.State.Checking)
+                R.string.update_btn_checking
+            else R.string.update_btn_check
+        ),
         enabled = updateState !is com.gameocr.app.update.UpdateViewModel.State.Checking,
         onClick = { updateVm.check() },
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text(
-            stringResource(
-                if (updateState is com.gameocr.app.update.UpdateViewModel.State.Checking)
-                    R.string.update_btn_checking
-                else R.string.update_btn_check
-            )
-        )
-    }
+        modifier = Modifier.fillMaxWidth(),
+        tone = ButtonTone.Secondary
+    )
 
     // 注意：UpdateResultDialog 已提到 MainScreen 顶层（避免自动检测弹窗被关于卡折叠遮住），
     // 这里不再重复挂——同一 ViewModel state，顶层 dialog 也响应"检查更新"按钮触发的 check()。
@@ -536,6 +742,9 @@ private fun UpdateResultDialog(
             val info = state.info
             AlertDialog(
                 onDismissRequest = onDismiss,
+                shape = AppleCardShape,
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                tonalElevation = 0.dp,
                 title = {
                     Text(stringResource(
                         if (info.hasUpdate) R.string.update_dialog_title_new
@@ -582,6 +791,9 @@ private fun UpdateResultDialog(
         is com.gameocr.app.update.UpdateViewModel.State.Failed -> {
             AlertDialog(
                 onDismissRequest = onDismiss,
+                shape = AppleCardShape,
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                tonalElevation = 0.dp,
                 title = { Text(stringResource(R.string.update_dialog_title_failed)) },
                 text = {
                     Text(stringResource(R.string.update_dialog_failed_format, state.errorMessage))
@@ -611,19 +823,10 @@ private fun StatusCard(
     batteryOk: Boolean,
     serviceRunning: Boolean
 ) {
-    Card(
+    AppleGlassPanel(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.onSurface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        elevation = 18.dp
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
             Text(
                 stringResource(R.string.main_status_title),
                 style = MaterialTheme.typography.titleMedium,
@@ -661,7 +864,6 @@ private fun StatusCard(
                 )
                 StatusChip(stringResource(R.string.main_status_battery_whitelist), batteryOk)
             }
-        }
     }
 }
 
@@ -670,9 +872,21 @@ private fun StatusChip(label: String, ok: Boolean, detail: String? = null) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f))
-            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .shadow(
+                elevation = 6.dp,
+                shape = RoundedCornerShape(18.dp),
+                clip = false,
+                ambientColor = Color(0xFF1D3557).copy(alpha = 0.06f),
+                spotColor = Color(0xFF1D3557).copy(alpha = 0.02f)
+            )
+            .clip(RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = if (isDarkThemeSurface()) 0.10f else 0.62f))
+            .border(
+                1.dp,
+                if (isDarkThemeSurface()) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.74f),
+                RoundedCornerShape(18.dp)
+            )
+            .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
         Surface(
             shape = CircleShape,
@@ -693,26 +907,16 @@ private fun StatusChip(label: String, ok: Boolean, detail: String? = null) {
 
 @Composable
 private fun ActionCard(title: String, content: @Composable () -> Unit) {
-    Card(
+    AppleGlassPanel(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.onSurface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        elevation = 18.dp
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
             Text(
                 title,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
             content()
-        }
     }
 }
 
